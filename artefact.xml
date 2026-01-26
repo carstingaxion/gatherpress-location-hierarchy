@@ -1,0 +1,1106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<artefact xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="artefact.xsd" name="GatherPress Venue Hierarchy" slug="gatherpress-venue-hierarchy" type="code-package" schemaVersion="2">
+  <file path="readme.txt">
+    <description>This file contains the readme information for the block. It is used to provide information about the block, its usage, and any other relevant details.</description>
+    <content><![CDATA[=== GatherPress Venue Hierarchy ===
+
+Contributors:      WordPress Telex
+Tags:              block, gatherpress, venue, hierarchy, geocoding
+Tested up to:      6.8
+Stable tag:        0.1.0
+License:           GPLv2 or later
+License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+Adds hierarchical location taxonomy to GatherPress with automatic geocoding
+
+== Description ==
+
+This plugin enhances GatherPress by adding a new hierarchical "gatherpress-location" taxonomy. It automatically geocodes venue addresses using the Nominatim API and generates a structured hierarchy of geographic terms: country as top-level parent, state/region as child of country, and county/city as child of state.
+
+Key features:
+
+* Creates new hierarchical "gatherpress-location" taxonomy
+* Works alongside existing GatherPress venue system
+* Automatic geocoding via Nominatim API with one-hour caching
+* Generates geographic hierarchy: Country > State > City
+* Checks for existing terms before creation
+* Admin settings for default geographic terms
+* Support for German-speaking regions (DE, AT, CH, LU)
+* Filter events by location, city, state, or country
+* Custom block for displaying full location hierarchy as inline text
+* Singleton pattern implementation
+* Comprehensive error logging and validation
+
+The plugin includes a custom Gutenberg block that displays the complete location hierarchy as a single inline text string, showing all parent and child location terms in one continuous paragraph line.
+
+== Installation ==
+
+1. Ensure GatherPress plugin is installed and activated
+2. Upload the plugin files to the `/wp-content/plugins/gatherpress-venue-hierarchy` directory, or install the plugin through the WordPress plugins screen directly
+3. Activate the plugin through the 'Plugins' screen in WordPress
+4. Navigate to Settings > GatherPress Location to configure default geographic terms
+5. Add the "Location Hierarchy Display" block to any post or page to show location information
+
+== Frequently Asked Questions ==
+
+= Does this require GatherPress? =
+
+Yes, this is an add-on for GatherPress and requires the GatherPress plugin to be installed and activated.
+
+= How does the geocoding work? =
+
+The plugin uses the Nominatim API to geocode venue addresses. Results are cached as transients for one hour to minimize API calls.
+
+= Can I set default locations? =
+
+Yes, you can configure default country, state, and city terms in the plugin settings under Settings > GatherPress Location.
+
+= What regions are supported? =
+
+The plugin has enhanced support for German-speaking regions (Germany, Austria, Switzerland, Luxembourg) but works with any geographic location.
+
+== Screenshots ==
+
+1. Admin settings page for configuring default geographic terms
+2. Location hierarchy block displaying inline location path
+3. Event filtered by country, state, or city
+
+== Changelog ==
+
+= 0.1.0 =
+* Initial release
+* New hierarchical gatherpress-location taxonomy
+* Nominatim API geocoding integration
+* Geographic term hierarchy generation
+* Admin settings panel
+* Custom location hierarchy display block
+* Caching and error handling
+
+== Usage ==
+
+After activation, the plugin creates a new "gatherpress-location" taxonomy. When creating or editing venues in GatherPress:
+
+1. Enter the venue address
+2. The plugin automatically geocodes and creates hierarchical location terms
+3. Use the admin settings to set default geographic locations
+4. Add the "Location Hierarchy Display" block to show location information
+5. Filter events by country, state, or city in both editor and frontend
+
+The location hierarchy block displays the complete path as inline text, for example: "Germany > Bavaria > Munich > Conference Center"]]></content>
+  </file>
+  <file path="gatherpress-venue-hierarchy.php">
+    <description>This file contains the block registration code in the form of a single block plugin. Any other plugin related functionality should be added to this file. All block rendering functionality should go to the `render.php` file.</description>
+    <content><![CDATA[<?php
+/**
+ * Plugin Name:       GatherPress Venue Hierarchy
+ * Plugin URI:        https://github.com/automattic/gatherpress-venue-hierarchy
+ * Description:       Adds hierarchical location taxonomy to GatherPress with automatic geocoding
+ * Version:           0.1.0
+ * Requires at least: 6.0
+ * Requires PHP:      7.4
+ * Author:            WordPress Telex
+ * License:           GPLv2 or later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       gatherpress-venue-hierarchy
+ *
+ * @package GatherPressVenueHierarchy
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * Main plugin class using Singleton pattern.
+ *
+ * Handles registration of the hierarchical location taxonomy,
+ * admin settings, and coordinates geocoding and hierarchy building
+ * for GatherPress venues.
+ *
+ * @since 0.1.0
+ */
+class GatherPress_Venue_Hierarchy {
+	
+	/**
+	 * Single instance of the class.
+	 *
+	 * @since 0.1.0
+	 * @var GatherPress_Venue_Hierarchy|null
+	 */
+	private static $instance = null;
+	
+	/**
+	 * Taxonomy name for hierarchical locations.
+	 *
+	 * @since 0.1.0
+	 * @var string
+	 */
+	private $taxonomy = 'gatherpress-location';
+	
+	/**
+	 * Get singleton instance.
+	 *
+	 * Ensures only one instance of the class exists.
+	 *
+	 * @since 0.1.0
+	 * @return GatherPress_Venue_Hierarchy The singleton instance.
+	 */
+	public static function get_instance(): GatherPress_Venue_Hierarchy {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+	
+	/**
+	 * Constructor.
+	 *
+	 * Private constructor to enforce singleton pattern.
+	 * Registers all WordPress hooks and filters.
+	 *
+	 * @since 0.1.0
+	 */
+	private function __construct() {
+		add_action( 'init', array( $this, 'init' ) );
+		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
+		add_action( 'admin_init', array( $this, 'register_settings' ) );
+		add_action( 'save_post_gatherpress_event', array( $this, 'maybe_geocode_event_venue' ), 20, 2 );
+	}
+	
+	/**
+	 * Initialize plugin.
+	 *
+	 * Registers the location taxonomy and block type.
+	 * Fires on the 'init' action.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function init(): void {
+		$this->register_location_taxonomy();
+		$this->register_block();
+	}
+	
+	/**
+	 * Register the hierarchical location taxonomy.
+	 *
+	 * Creates a hierarchical taxonomy for organizing venues
+	 * by country, state/region, and city.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function register_location_taxonomy(): void {
+		$labels = array(
+			'name'                       => __( 'Locations', 'gatherpress-venue-hierarchy' ),
+			'singular_name'              => __( 'Location', 'gatherpress-venue-hierarchy' ),
+			'search_items'               => __( 'Search Locations', 'gatherpress-venue-hierarchy' ),
+			'all_items'                  => __( 'All Locations', 'gatherpress-venue-hierarchy' ),
+			'parent_item'                => __( 'Parent Location', 'gatherpress-venue-hierarchy' ),
+			'parent_item_colon'          => __( 'Parent Location:', 'gatherpress-venue-hierarchy' ),
+			'edit_item'                  => __( 'Edit Location', 'gatherpress-venue-hierarchy' ),
+			'update_item'                => __( 'Update Location', 'gatherpress-venue-hierarchy' ),
+			'add_new_item'               => __( 'Add New Location', 'gatherpress-venue-hierarchy' ),
+			'new_item_name'              => __( 'New Location Name', 'gatherpress-venue-hierarchy' ),
+			'menu_name'                  => __( 'Locations', 'gatherpress-venue-hierarchy' ),
+		);
+		
+		$args = array(
+			'labels'                     => $labels,
+			'hierarchical'               => true,
+			'public'                     => true,
+			'show_ui'                    => true,
+			'show_admin_column'          => true,
+			'show_in_nav_menus'          => true,
+			'show_tagcloud'              => true,
+			'show_in_rest'               => true,
+			'rewrite'                    => array( 'slug' => 'location' ),
+		);
+		
+		register_taxonomy( $this->taxonomy, array( 'gatherpress_event' ), $args );
+	}
+	
+	/**
+	 * Register the location hierarchy display block.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function register_block(): void {
+		register_block_type( __DIR__ . '/build/' );
+	}
+	
+	/**
+	 * Add admin menu for plugin settings.
+	 *
+	 * Creates a submenu page under Settings for configuring
+	 * default geographic locations.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function add_admin_menu(): void {
+		add_options_page(
+			__( 'GatherPress Location', 'gatherpress-venue-hierarchy' ),
+			__( 'GatherPress Location', 'gatherpress-venue-hierarchy' ),
+			'manage_options',
+			'gatherpress-venue-hierarchy',
+			array( $this, 'render_admin_page' )
+		);
+	}
+	
+	/**
+	 * Register plugin settings.
+	 *
+	 * Registers settings for default country, state, and city values.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function register_settings(): void {
+		register_setting(
+			'gatherpress_venue_hierarchy',
+			'gatherpress_venue_hierarchy_defaults',
+			array(
+				'type' => 'array',
+				'sanitize_callback' => array( $this, 'sanitize_settings' ),
+				'default' => array(
+					'country' => '',
+					'state' => '',
+					'city' => '',
+				),
+			)
+		);
+	}
+	
+	/**
+	 * Sanitize settings input.
+	 *
+	 * Ensures all settings values are properly sanitized before saving.
+	 *
+	 * @since 0.1.0
+	 * @param mixed $input Raw settings input from form submission.
+	 * @return array<string, string> Sanitized settings array.
+	 */
+	public function sanitize_settings( $input ): array {
+		if ( ! is_array( $input ) ) {
+			$input = array();
+		}
+		
+		return array(
+			'country' => sanitize_text_field( $input['country'] ?? '' ),
+			'state' => sanitize_text_field( $input['state'] ?? '' ),
+			'city' => sanitize_text_field( $input['city'] ?? '' ),
+		);
+	}
+	
+	/**
+	 * Render the admin settings page.
+	 *
+	 * Displays the settings form for configuring default locations.
+	 * Includes fields for country, state, and city.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function render_admin_page(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		
+		$defaults = get_option( 'gatherpress_venue_hierarchy_defaults', array(
+			'country' => '',
+			'state' => '',
+			'city' => '',
+		) );
+		
+		if ( ! is_array( $defaults ) ) {
+			$defaults = array(
+				'country' => '',
+				'state' => '',
+				'city' => '',
+			);
+		}
+		?>
+		<div class="wrap">
+			<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
+			<form method="post" action="options.php">
+				<?php settings_fields( 'gatherpress_venue_hierarchy' ); ?>
+				<table class="form-table">
+					<tr>
+						<th scope="row">
+							<label for="default_country"><?php esc_html_e( 'Default Country', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_country" name="gatherpress_venue_hierarchy_defaults[country]" 
+								value="<?php echo esc_attr( $defaults['country'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default country for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="default_state"><?php esc_html_e( 'Default State/Region', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_state" name="gatherpress_venue_hierarchy_defaults[state]" 
+								value="<?php echo esc_attr( $defaults['state'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default state or region for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="default_city"><?php esc_html_e( 'Default City', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_city" name="gatherpress_venue_hierarchy_defaults[city]" 
+								value="<?php echo esc_attr( $defaults['city'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default city for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
+				</table>
+				<?php submit_button(); ?>
+			</form>
+		</div>
+		<?php
+	}
+	
+	/**
+	 * Maybe geocode event venue on save.
+	 *
+	 * Triggers geocoding and hierarchy generation when a GatherPress
+	 * event is saved. Skips if autosaving or if no venue address exists.
+	 *
+	 * @since 0.1.0
+	 * @param int     $post_id Post ID of the event.
+	 * @param \WP_Post $post    Post object.
+	 * @return void
+	 */
+	public function maybe_geocode_event_venue( int $post_id, \WP_Post $post ): void {
+		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+			return;
+		}
+		
+		if ( 'gatherpress_event' !== $post->post_type ) {
+			return;
+		}
+		
+		if ( ! class_exists( 'GatherPress\Core\Event' ) ) {
+			error_log( 'GatherPress Venue Hierarchy: GatherPress Event class not found' );
+			return;
+		}
+		
+		$event = new \GatherPress\Core\Event( $post_id );
+		$venue_info = $event->get_venue_information();
+		
+		if ( ! is_array( $venue_info ) || empty( $venue_info['full_address'] ) ) {
+			return;
+		}
+		
+		$this->geocode_and_create_hierarchy( $post_id, $venue_info['full_address'] );
+	}
+	
+	/**
+	 * Geocode address and create location hierarchy.
+	 *
+	 * Coordinates the geocoding process via Nominatim API and
+	 * generates the hierarchical location terms.
+	 *
+	 * @since 0.1.0
+	 * @param int    $post_id Post ID to associate terms with.
+	 * @param string $address Address to geocode.
+	 * @return void
+	 */
+	private function geocode_and_create_hierarchy( int $post_id, string $address ): void {
+		$geocoder = GatherPress_Venue_Geocoder::get_instance();
+		$location = $geocoder->geocode( $address );
+		
+		if ( ! $location ) {
+			error_log( 'GatherPress Venue Hierarchy: Failed to geocode address for event ' . $post_id );
+			return;
+		}
+		
+		$hierarchy_builder = GatherPress_Venue_Hierarchy_Builder::get_instance();
+		$hierarchy_builder->create_hierarchy_terms( $post_id, $location, $this->taxonomy );
+	}
+}
+
+/**
+ * Geocoder class using Singleton pattern.
+ *
+ * Handles geocoding of addresses via the Nominatim OpenStreetMap API.
+ * Includes caching to minimize API calls and parsing of location data
+ * with special handling for German-speaking regions.
+ *
+ * @since 0.1.0
+ */
+class GatherPress_Venue_Geocoder {
+	
+	/**
+	 * Single instance.
+	 *
+	 * @since 0.1.0
+	 * @var GatherPress_Venue_Geocoder|null
+	 */
+	private static $instance = null;
+	
+	/**
+	 * Nominatim API endpoint.
+	 *
+	 * @since 0.1.0
+	 * @var string
+	 */
+	private $api_endpoint = 'https://nominatim.openstreetmap.org/search';
+	
+	/**
+	 * Cache duration in seconds (1 hour).
+	 *
+	 * @since 0.1.0
+	 * @var int
+	 */
+	private $cache_duration = 3600;
+	
+	/**
+	 * Get singleton instance.
+	 *
+	 * @since 0.1.0
+	 * @return GatherPress_Venue_Geocoder The singleton instance.
+	 */
+	public static function get_instance(): GatherPress_Venue_Geocoder {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+	
+	/**
+	 * Constructor.
+	 *
+	 * Private constructor to enforce singleton pattern.
+	 *
+	 * @since 0.1.0
+	 */
+	private function __construct() {}
+	
+	/**
+	 * Geocode an address.
+	 *
+	 * Queries the Nominatim API to get geographic coordinates and
+	 * location details. Results are cached for one hour.
+	 *
+	 * @since 0.1.0
+	 * @param string $address Address to geocode.
+	 * @return array<string, string>|false Location data array with keys:
+	 *                                      'country', 'country_code', 'state', 'city'
+	 *                                      or false on failure.
+	 */
+	public function geocode( string $address ) {
+		$address = sanitize_text_field( $address );
+		$cache_key = 'gpvh_geocode_' . md5( $address );
+		
+		$cached = get_transient( $cache_key );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+		
+		$response = wp_remote_get(
+			add_query_arg(
+				array(
+					'q' => $address,
+					'format' => 'json',
+					'addressdetails' => '1',
+					'limit' => '1',
+				),
+				$this->api_endpoint
+			),
+			array(
+				'timeout' => 10,
+				'headers' => array(
+					'User-Agent' => 'GatherPress Venue Hierarchy WordPress Plugin',
+				),
+			)
+		);
+		
+		if ( is_wp_error( $response ) ) {
+			error_log( 'GatherPress Venue Hierarchy: Geocoding API error - ' . $response->get_error_message() );
+			return false;
+		}
+		
+		$body = wp_remote_retrieve_body( $response );
+		$data = json_decode( $body, true );
+		
+		if ( empty( $data ) || ! is_array( $data ) ) {
+			error_log( 'GatherPress Venue Hierarchy: Invalid API response for address: ' . $address );
+			return false;
+		}
+		
+		$location = $this->parse_location_data( $data[0] );
+		
+		if ( $location ) {
+			set_transient( $cache_key, $location, $this->cache_duration );
+		}
+		
+		return $location;
+	}
+	
+	/**
+	 * Parse location data from API response.
+	 *
+	 * Extracts country, state, and city information from the Nominatim
+	 * API response with special handling for German-speaking regions.
+	 *
+	 * @since 0.1.0
+	 * @param array<string, mixed> $data API response data.
+	 * @return array<string, string>|false Parsed location data or false on failure.
+	 */
+	private function parse_location_data( array $data ) {
+		if ( empty( $data['address'] ) || ! is_array( $data['address'] ) ) {
+			return false;
+		}
+		
+		$address = $data['address'];
+		$country_code = strtolower( $address['country_code'] ?? '' );
+		
+		$location = array(
+			'country' => $this->sanitize_term_name( $address['country'] ?? '' ),
+			'country_code' => $country_code,
+			'state' => '',
+			'city' => '',
+		);
+		
+		$german_regions = array( 'de', 'at', 'ch', 'lu' );
+		$is_german_region = in_array( $country_code, $german_regions, true );
+		
+		if ( $is_german_region ) {
+			$location['state'] = $this->sanitize_term_name( $address['state'] ?? '' );
+		} else {
+			$location['state'] = $this->sanitize_term_name( 
+				$address['state'] ?? $address['region'] ?? $address['province'] ?? '' 
+			);
+		}
+		
+		$location['city'] = $this->sanitize_term_name(
+			$address['city'] ?? $address['town'] ?? $address['village'] ?? $address['county'] ?? ''
+		);
+		
+		return array_filter( $location );
+	}
+	
+	/**
+	 * Sanitize term name.
+	 *
+	 * Removes unwanted characters and trims whitespace.
+	 *
+	 * @since 0.1.0
+	 * @param string $name Term name to sanitize.
+	 * @return string Sanitized term name.
+	 */
+	private function sanitize_term_name( string $name ): string {
+		return trim( sanitize_text_field( $name ) );
+	}
+}
+
+/**
+ * Hierarchy builder class using Singleton pattern.
+ *
+ * Creates and manages hierarchical taxonomy terms for locations,
+ * establishing parent-child relationships between country, state, and city.
+ *
+ * @since 0.1.0
+ */
+class GatherPress_Venue_Hierarchy_Builder {
+	
+	/**
+	 * Single instance.
+	 *
+	 * @since 0.1.0
+	 * @var GatherPress_Venue_Hierarchy_Builder|null
+	 */
+	private static $instance = null;
+	
+	/**
+	 * Get singleton instance.
+	 *
+	 * @since 0.1.0
+	 * @return GatherPress_Venue_Hierarchy_Builder The singleton instance.
+	 */
+	public static function get_instance(): GatherPress_Venue_Hierarchy_Builder {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+	
+	/**
+	 * Constructor.
+	 *
+	 * Private constructor to enforce singleton pattern.
+	 *
+	 * @since 0.1.0
+	 */
+	private function __construct() {}
+	
+	/**
+	 * Create hierarchy terms.
+	 *
+	 * Generates hierarchical taxonomy terms for country, state, and city,
+	 * establishing proper parent-child relationships and associating them
+	 * with the specified post.
+	 *
+	 * @since 0.1.0
+	 * @param int                  $post_id  Post ID to associate terms with.
+	 * @param array<string, string> $location Location data array with keys:
+	 *                                       'country', 'state', 'city'.
+	 * @param string               $taxonomy Taxonomy name.
+	 * @return void
+	 */
+	public function create_hierarchy_terms( int $post_id, array $location, string $taxonomy ): void {
+		$country_term_id = 0;
+		$state_term_id = 0;
+		$city_term_id = 0;
+		
+		if ( ! empty( $location['country'] ) ) {
+			$country_term_id = $this->get_or_create_term( $location['country'], 0, $taxonomy );
+		}
+		
+		if ( ! empty( $location['state'] ) && $country_term_id ) {
+			$state_term_id = $this->get_or_create_term( $location['state'], $country_term_id, $taxonomy );
+		}
+		
+		if ( ! empty( $location['city'] ) && $state_term_id ) {
+			$city_term_id = $this->get_or_create_term( $location['city'], $state_term_id, $taxonomy );
+		}
+		
+		$term_ids = array_filter( array( $country_term_id, $state_term_id, $city_term_id ) );
+		
+		if ( ! empty( $term_ids ) ) {
+			wp_set_object_terms( $post_id, $term_ids, $taxonomy, false );
+		}
+	}
+	
+	/**
+	 * Get or create term.
+	 *
+	 * Retrieves an existing term by name or creates it if it doesn't exist.
+	 * Updates parent relationship if the term exists but has wrong parent.
+	 *
+	 * @since 0.1.0
+	 * @param string $name      Term name.
+	 * @param int    $parent_id Parent term ID (0 for top-level).
+	 * @param string $taxonomy  Taxonomy name.
+	 * @return int Term ID, or 0 on failure.
+	 */
+	private function get_or_create_term( string $name, int $parent_id, string $taxonomy ): int {
+		$name = sanitize_text_field( $name );
+		
+		$existing_term = get_term_by( 'name', $name, $taxonomy );
+		
+		if ( $existing_term instanceof \WP_Term ) {
+			if ( $existing_term->parent !== $parent_id ) {
+				wp_update_term(
+					$existing_term->term_id,
+					$taxonomy,
+					array( 'parent' => $parent_id )
+				);
+			}
+			return $existing_term->term_id;
+		}
+		
+		$term = wp_insert_term(
+			$name,
+			$taxonomy,
+			array( 'parent' => $parent_id )
+		);
+		
+		if ( is_wp_error( $term ) ) {
+			error_log( 'GatherPress Venue Hierarchy: Failed to create term - ' . $term->get_error_message() );
+			return 0;
+		}
+		
+		if ( ! is_array( $term ) || ! isset( $term['term_id'] ) ) {
+			return 0;
+		}
+		
+		return $term['term_id'];
+	}
+}
+
+if ( ! function_exists( 'gatherpress_venue_hierarchy_init' ) ) {
+	/**
+	 * Initialize the plugin.
+	 *
+	 * Bootstrap function that initializes the main plugin class.
+	 * Hooked to 'plugins_loaded' to ensure WordPress core is fully loaded.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	function gatherpress_venue_hierarchy_init(): void {
+		GatherPress_Venue_Hierarchy::get_instance();
+	}
+	add_action( 'plugins_loaded', 'gatherpress_venue_hierarchy_init' );
+}]]></content>
+  </file>
+  <file path="src/block.json">
+    <description>This file contains metadata about the block including its name, title, category, icon, and other properties. The icon is a WordPress Dashicon name (e.g., "admin-post", "format-aside", "admin-page"). Do not use any icon that's not in the list under any circustamce. These are the only slugs available:
+	
+	menu menu-alt menu-alt2 menu-alt3 admin-site admin-site-alt admin-site-alt2 admin-site-alt3 dashboard admin-post admin-media admin-links admin-page admin-comments admin-appearance admin-plugins plugins-checked admin-users admin-tools admin-settings admin-network admin-home admin-generic admin-collapse filter admin-customizer admin-multisite welcome-write-blog welcome-add-page welcome-view-site welcome-widgets-menus welcome-comments welcome-learn-more format-aside format-image format-gallery format-video format-status format-quote format-chat format-audio camera camera-alt images-alt images-alt2 video-alt video-alt2 video-alt3 media-archive media-audio media-code media-default media-document media-interactive media-spreadsheet media-text media-video playlist-audio playlist-video controls-play controls-pause controls-forward controls-skipforward controls-back controls-skipback controls-repeat controls-volumeon controls-volumeoff image-crop image-rotate image-rotate-left image-rotate-right image-flip-vertical image-flip-horizontal image-filter undo redo database-add database database-export database-import database-remove database-view align-full-width align-pull-left align-pull-right align-wide block-default button cloud-saved cloud-upload columns cover-image ellipsis embed-audio embed-generic embed-photo embed-post embed-video exit heading html info-outline insert insert-after insert-before remove saved shortcode table-col-after table-col-before table-col-delete table-row-after table-row-before table-row-delete editor-bold editor-italic editor-ul editor-ol editor-ol-rtl editor-quote editor-alignleft editor-aligncenter editor-alignright editor-insertmore editor-spellcheck editor-expand editor-contract editor-kitchensink editor-underline editor-justify editor-textcolor editor-paste-word editor-paste-text editor-removeformatting editor-video editor-customchar editor-outdent editor-indent editor-help editor-strikethrough editor-unlink editor-rtl editor-ltr editor-break editor-code editor-paragraph editor-table align-left align-right align-center align-none lock unlock calendar calendar-alt visibility hidden post-status edit trash sticky external arrow-up arrow-down arrow-right arrow-left arrow-up-alt arrow-down-alt arrow-right-alt arrow-left-alt arrow-up-alt2 arrow-down-alt2 arrow-right-alt2 arrow-left-alt2 sort leftright randomize list-view excerpt-view grid-view move share share-alt share-alt2 rss email email-alt email-alt2 networking amazon facebook facebook-alt google instagram linkedin pinterest podio reddit spotify twitch twitter twitter-alt whatsapp xing youtube hammer art migrate performance universal-access universal-access-alt tickets nametag clipboard heart megaphone schedule tide rest-api code-standards buddicons-activity buddicons-bbpress-logo buddicons-buddypress-logo buddicons-community buddicons-forums buddicons-friends buddicons-groups buddicons-pm buddicons-replies buddicons-topics buddicons-tracking wordpress wordpress-alt pressthis update update-alt screenoptions info cart feedback cloud translation tag category archive tagcloud text bell yes yes-alt no no-alt plus plus-alt plus-alt2 minus dismiss marker star-filled star-half star-empty flag warning location location-alt vault shield shield-alt sos search slides text-page analytics chart-pie chart-bar chart-line chart-area groups businessman businesswoman businessperson id id-alt products awards forms testimonial portfolio book book-alt download upload backup clock lightbulb microphone desktop laptop tablet smartphone phone index-card carrot building store album palmtree tickets-alt money money-alt smiley thumbs-up thumbs-down layout paperclip color-picker edit-large edit-page airplane bank beer calculator car coffee drumstick food fullscreen-alt fullscreen-exit-alt games hourglass open-folder pdf pets printer privacy superhero superhero-alt</description>
+    <content><![CDATA[{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "telex/block-gatherpress-venue-hierarchy",
+	"version": "0.1.0",
+	"title": "Location Hierarchy Display",
+	"category": "widgets",
+	"icon": "location",
+	"description": "Displays the complete location hierarchy as inline text",
+	"example": {},
+	"attributes": {
+		"venueId": {
+			"type": "number",
+			"default": 0
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": true
+	},
+	"textdomain": "gatherpress-venue-hierarchy",
+	"editorScript": "file:./index.js",
+	"editorStyle": "file:./index.css",
+	"style": "file:./style-index.css",
+	"render": "file:./render.php"
+}]]></content>
+  </file>
+  <file path="src/index.js">
+    <description>This file registers the block, specifies the edit and save functions, and loads the block's metadata</description>
+    <content><![CDATA[
+  /**
+ * Registers a new block provided a unique name and an object defining its behavior.
+ *
+ * @see https://developer.wordpress.org/block-editor/reference-guides/block-api/block-registration/
+ */
+import { registerBlockType } from '@wordpress/blocks';
+
+/**
+ * Lets webpack process CSS, SASS or SCSS files referenced in JavaScript files.
+ * All files containing `style` keyword are bundled together. The code used
+ * gets applied both to the front of your site and to the editor.
+ *
+ * @see https://www.npmjs.com/package/@wordpress/scripts#using-css
+ */
+import './style.scss';
+
+/**
+ * Internal dependencies
+ */
+import Edit from './edit';
+import metadata from './block.json';
+
+/**
+ * Every block starts by registering a new block type definition.
+ *
+ * @see https://developer.wordpress.org/block-editor/reference-guides/block-api/block-registration/
+ */
+registerBlockType( metadata.name, {
+	/**
+	 * @see ./edit.js
+	 */
+	edit: Edit,
+} );
+	]]></content>
+  </file>
+  <file path="src/edit.js">
+    <description>This file contains the edit function for the block which is responsible for rendering the block in the editor.</description>
+    <content><![CDATA[/**
+ * Retrieves the translation of text.
+ *
+ * @see https://developer.wordpress.org/block-editor/reference-guides/packages/packages-i18n/
+ */
+import { __ } from '@wordpress/i18n';
+
+/**
+ * React hook that is used to mark the block wrapper element.
+ * It provides all the necessary props like the class name.
+ *
+ * @see https://developer.wordpress.org/block-editor/reference-guides/packages/packages-block-editor/#useblockprops
+ */
+import { useBlockProps, InspectorControls } from '@wordpress/block-editor';
+import { PanelBody, SelectControl, Spinner } from '@wordpress/components';
+import { useSelect } from '@wordpress/data';
+import { store as coreDataStore } from '@wordpress/core-data';
+import { useState, useEffect } from '@wordpress/element';
+
+/**
+ * Lets webpack process CSS, SASS or SCSS files referenced in JavaScript files.
+ * Those files can contain any CSS code that gets applied to the editor.
+ *
+ * @see https://www.npmjs.com/package/@wordpress/scripts#using-css
+ */
+import './editor.scss';
+
+/**
+ * The edit function describes the structure of your block in the context of the
+ * editor. This represents what the editor will render when the block is used.
+ *
+ * @see https://developer.wordpress.org/block-editor/reference-guides/block-api/block-edit-save/#edit
+ *
+ * @return {Element} Element to render.
+ */
+export default function Edit( { attributes, setAttributes } ) {
+	const { venueId } = attributes;
+	const [ locationHierarchy, setLocationHierarchy ] = useState( '' );
+	
+	const { venues, isLoadingVenues } = useSelect( ( select ) => {
+		const { getEntityRecords, isResolving } = select( coreDataStore );
+		
+		return {
+			venues: getEntityRecords( 'postType', 'gatherpress_venue', {
+				per_page: -1,
+				orderby: 'title',
+				order: 'asc',
+			} ),
+			isLoadingVenues: isResolving( 'getEntityRecords', [
+				'postType',
+				'gatherpress_venue',
+				{ per_page: -1 }
+			] ),
+		};
+	}, [] );
+	
+	const { locationTerms } = useSelect( ( select ) => {
+		if ( ! venueId ) {
+			return { locationTerms: null };
+		}
+		
+		const { getEntityRecord } = select( coreDataStore );
+		const venue = getEntityRecord( 'postType', 'gatherpress_venue', venueId );
+		
+		if ( ! venue || ! venue['gatherpress-location'] ) {
+			return { locationTerms: null };
+		}
+		
+		return {
+			locationTerms: venue['gatherpress-location'],
+		};
+	}, [ venueId ] );
+	
+	useEffect( () => {
+		if ( ! locationTerms || locationTerms.length === 0 ) {
+			setLocationHierarchy( __( 'No venue selected or no location hierarchy available', 'gatherpress-venue-hierarchy' ) );
+			return;
+		}
+		
+		const fetchHierarchy = async () => {
+			try {
+				const termIds = Array.isArray( locationTerms ) ? locationTerms : [ locationTerms ];
+				const hierarchy = [];
+				
+				for ( const termId of termIds ) {
+					const term = await window.wp.apiFetch( {
+						path: `/wp/v2/gatherpress-location/${ termId }`,
+					} );
+					
+					if ( term ) {
+						const path = await buildTermPath( term.id );
+						hierarchy.push( path );
+					}
+				}
+				
+				if ( hierarchy.length > 0 ) {
+					setLocationHierarchy( hierarchy.join( ', ' ) );
+				}
+			} catch ( error ) {
+				setLocationHierarchy( __( 'Error loading location hierarchy', 'gatherpress-venue-hierarchy' ) );
+			}
+		};
+		
+		fetchHierarchy();
+	}, [ locationTerms ] );
+	
+	const buildTermPath = async ( termId ) => {
+		const path = [];
+		let currentTermId = termId;
+		
+		while ( currentTermId ) {
+			try {
+				const term = await window.wp.apiFetch( {
+					path: `/wp/v2/gatherpress-location/${ currentTermId }`,
+				} );
+				
+				if ( term ) {
+					path.unshift( term.name );
+					currentTermId = term.parent;
+				} else {
+					break;
+				}
+			} catch ( error ) {
+				break;
+			}
+		}
+		
+		return path.join( ' > ' );
+	};
+	
+	const venueOptions = [
+		{ label: __( 'Select a venue...', 'gatherpress-venue-hierarchy' ), value: 0 },
+	];
+	
+	if ( venues ) {
+		venues.forEach( ( venue ) => {
+			venueOptions.push( {
+				label: venue.title.rendered,
+				value: venue.id,
+			} );
+		} );
+	}
+	
+	return (
+		<>
+			<InspectorControls>
+				<PanelBody title={ __( 'Venue Settings', 'gatherpress-venue-hierarchy' ) }>
+					{ isLoadingVenues ? (
+						<Spinner />
+					) : (
+						<SelectControl
+							label={ __( 'Select Venue', 'gatherpress-venue-hierarchy' ) }
+							value={ venueId }
+							options={ venueOptions }
+							onChange={ ( value ) => setAttributes( { venueId: parseInt( value, 10 ) } ) }
+							help={ __( 'Choose a venue to display its location hierarchy', 'gatherpress-venue-hierarchy' ) }
+						/>
+					) }
+				</PanelBody>
+			</InspectorControls>
+			<p { ...useBlockProps() }>
+				{ venueId ? locationHierarchy : __( 'Please select a venue from the block settings', 'gatherpress-venue-hierarchy' ) }
+			</p>
+		</>
+	);
+}]]></content>
+  </file>
+  <file path="src/save.js">
+    <description>This file contains the save function for the block which is responsible for creating the static result of rendering the block on the client to display the saved result on the front end.</description>
+    <content><![CDATA[
+	]]></content>
+  </file>
+  <file path="src/style.scss">
+    <description>This file contains styles for the block in the front end.</description>
+    <content><![CDATA[
+  /**
+ * The following styles get applied both on the front of your site
+ * and in the editor.
+ *
+ * Replace them with your own styles or remove the file completely.
+ */
+
+.wp-block-telex-block-gatherpress-venue-hierarchy {
+	padding: 1em;
+	background-color: #f7f7f7;
+	border-left: 4px solid #0073aa;
+	margin: 1em 0;
+	
+	&.alignleft {
+		margin-right: 1em;
+		max-width: 50%;
+	}
+	
+	&.alignright {
+		margin-left: 1em;
+		max-width: 50%;
+	}
+	
+	&.aligncenter {
+		margin-left: auto;
+		margin-right: auto;
+		text-align: center;
+	}
+	
+	&.alignfull {
+		margin-left: 0;
+		margin-right: 0;
+	}
+}
+	]]></content>
+  </file>
+  <file path="src/editor.scss">
+    <description>This file contains styles for the block in the editor.</description>
+    <content><![CDATA[
+  /**
+ * The following styles get applied inside the editor only.
+ *
+ * Replace them with your own styles or remove the file completely.
+ */
+
+.wp-block-telex-block-gatherpress-venue-hierarchy {
+	border: 1px dashed #ccc;
+	min-height: 2em;
+	
+	&:hover {
+		border-color: #0073aa;
+	}
+}
+	]]></content>
+  </file>
+  <file path="src/view.js">
+    <description>This file contains the view function for the block which is responsible for rendering interactive behaviors of the block on the front end. Ideally using the WordPress interactivity API.</description>
+    <content><![CDATA[
+  /**
+ * Use this file for JavaScript code that you want to run in the front-end
+ * on posts/pages that contain this block.
+ */
+	]]></content>
+  </file>
+  <file path="src/render.php">
+    <description>This file contains the render callback function for the block, which is responsible for rendering the block content on the front end. A render function should exist only if the block is dynamic.</description>
+    <content><![CDATA[<?php
+/**
+ * @see https://github.com/WordPress/gutenberg/blob/trunk/docs/reference-guides/block-api/block-metadata.md#render
+ */
+
+$venue_id = isset( $attributes['venueId'] ) ? absint( $attributes['venueId'] ) : 0;
+
+if ( ! $venue_id ) {
+	return;
+}
+
+$location_terms = wp_get_object_terms( $venue_id, 'gatherpress-location' );
+
+if ( is_wp_error( $location_terms ) || empty( $location_terms ) ) {
+	return;
+}
+
+$hierarchy_paths = array();
+
+foreach ( $location_terms as $term ) {
+	$path = array();
+	$current_term = $term;
+	
+	while ( $current_term ) {
+		array_unshift( $path, esc_html( $current_term->name ) );
+		
+		if ( $current_term->parent ) {
+			$current_term = get_term( $current_term->parent, 'gatherpress-location' );
+			if ( is_wp_error( $current_term ) ) {
+				break;
+			}
+		} else {
+			break;
+		}
+	}
+	
+	if ( ! empty( $path ) ) {
+		$hierarchy_paths[] = implode( ' &gt; ', $path );
+	}
+}
+
+if ( empty( $hierarchy_paths ) ) {
+	return;
+}
+
+$wrapper_attributes = get_block_wrapper_attributes();
+?>
+<p <?php echo $wrapper_attributes; ?>>
+	<?php echo implode( ', ', $hierarchy_paths ); ?>
+</p>
+]]></content>
+  </file>
+</artefact>
