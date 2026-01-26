@@ -21,9 +21,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Main plugin class using Singleton pattern.
  *
- * Handles registration of the hierarchical location taxonomy,
- * admin settings, and coordinates geocoding and hierarchy building
- * for GatherPress venues.
+ * **What:** Core plugin controller that manages the hierarchical location taxonomy system.
+ *
+ * **Why:** Provides a single point of initialization and coordination for all plugin functionality,
+ * ensuring only one instance exists (Singleton pattern) to prevent duplicate registrations and
+ * conflicts. This is critical for WordPress hooks and taxonomy registration.
+ *
+ * **How:** Registers WordPress hooks on instantiation, coordinates geocoding and hierarchy building
+ * through specialized singleton classes (Geocoder and Hierarchy_Builder), and manages the custom
+ * taxonomy lifecycle. Uses the Singleton pattern to guarantee single instantiation via
+ * get_instance() static method and private constructor.
  *
  * @since 0.1.0
  */
@@ -31,6 +38,11 @@ class GatherPress_Venue_Hierarchy {
 	
 	/**
 	 * Single instance of the class.
+	 *
+	 * **What:** Holds the single instance of this class.
+	 *
+	 * **Why:** Part of the Singleton pattern implementation to ensure only one instance
+	 * exists throughout the WordPress request lifecycle.
 	 *
 	 * @since 0.1.0
 	 * @var GatherPress_Venue_Hierarchy|null
@@ -40,6 +52,11 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Taxonomy name for hierarchical locations.
 	 *
+	 * **What:** The slug identifier for the custom location taxonomy.
+	 *
+	 * **Why:** Centralized constant prevents typos and makes refactoring easier.
+	 * This taxonomy stores geographical hierarchy (continent > country > state > city > street > street-number).
+	 *
 	 * @since 0.1.0
 	 * @var string
 	 */
@@ -48,7 +65,13 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Get singleton instance.
 	 *
-	 * Ensures only one instance of the class exists.
+	 * **What:** Returns the single instance of the class, creating it if necessary.
+	 *
+	 * **Why:** Ensures only one instance of the plugin class exists, preventing duplicate
+	 * hook registrations and taxonomy definitions that could cause WordPress conflicts.
+	 *
+	 * **How:** Checks if instance exists in static property; if not, creates new instance
+	 * via private constructor. Always returns the same instance on subsequent calls.
 	 *
 	 * @since 0.1.0
 	 * @return GatherPress_Venue_Hierarchy The singleton instance.
@@ -63,8 +86,19 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Constructor.
 	 *
-	 * Private constructor to enforce singleton pattern.
-	 * Registers all WordPress hooks and filters.
+	 * **What:** Initializes the plugin by registering all WordPress hooks.
+	 *
+	 * **Why:** Private to enforce Singleton pattern - prevents external instantiation.
+	 * All WordPress integration points must be registered during construction to ensure
+	 * they're active when WordPress processes its action/filter queues.
+	 *
+	 * **How:** Adds action/filter callbacks for:
+	 * - init: Register taxonomy and block
+	 * - admin_menu: Add settings page
+	 * - admin_init: Register settings
+	 * - save_post_gatherpress_event (priority 20): Trigger geocoding after event save
+	 *
+	 * Priority 20 ensures GatherPress core has saved venue data first (default priority 10).
 	 *
 	 * @since 0.1.0
 	 */
@@ -73,15 +107,18 @@ class GatherPress_Venue_Hierarchy {
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'save_post_gatherpress_event', array( $this, 'maybe_geocode_event_venue' ), 20, 2 );
-		// add_filter( 'get_terms_args', array( $this, 'order_location_terms_hierarchically' ), 10, 2 );
-		// add_filter( 'terms_clauses', array( $this, 'modify_location_terms_query' ), 10, 3 );
 	}
 	
 	/**
 	 * Initialize plugin.
 	 *
-	 * Registers the location taxonomy and block type.
-	 * Fires on the 'init' action.
+	 * **What:** Registers the location taxonomy and block type with WordPress.
+	 *
+	 * **Why:** Must run on 'init' hook (earliest point WordPress allows taxonomy/block registration)
+	 * to ensure taxonomy is available for queries and block is available in the editor.
+	 *
+	 * **How:** Calls register_location_taxonomy() to define the hierarchical taxonomy structure,
+	 * then register_block() to make the display block available in Gutenberg.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -94,8 +131,20 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Register the hierarchical location taxonomy.
 	 *
-	 * Creates a hierarchical taxonomy for organizing venues
-	 * by country, state/region, and city.
+	 * **What:** Creates a hierarchical taxonomy for organizing venues by geographical location.
+	 *
+	 * **Why:** WordPress's default taxonomy system requires explicit registration before use.
+	 * Hierarchical structure allows parent-child relationships (Europe > Germany > Bavaria > Munich > Main St > 123),
+	 * enabling filtering at any level and proper breadcrumb-style display.
+	 *
+	 * **How:** Uses register_taxonomy() with carefully configured args:
+	 * - hierarchical: true - Enables parent-child relationships like categories
+	 * - show_in_rest: true - Exposes to Gutenberg block editor and REST API
+	 * - orderby: parent, order: ASC - Ensures terms display in geographical hierarchy order
+	 * - rewrite: hierarchical - Creates pretty URLs like /location/europe/germany/
+	 *
+	 * The 'args' parameter contains WP_Term_Query args that control how terms are retrieved
+	 * globally, ensuring consistent hierarchical ordering throughout WordPress.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -127,7 +176,10 @@ class GatherPress_Venue_Hierarchy {
 			'show_in_nav_menus'          => true,
 			'show_tagcloud'              => true,
 			'show_in_rest'               => true,
-			'rewrite'                    => array( 'slug' => 'location' ),
+			'rewrite'                    => array(
+				'slug' => 'location',
+				'hierarchical' => true,
+			),
 			'sort'                       => true,
 			'args'                       => $wp_term_query_args,
 		);
@@ -135,69 +187,19 @@ class GatherPress_Venue_Hierarchy {
 		register_taxonomy( $this->taxonomy, array( 'gatherpress_event' ), $args );
 	}
 	
-	/**
-	 * Order location terms hierarchically.
-	 *
-	 * Modifies term query arguments to ensure location terms
-	 * are always ordered from parent to child (country > state > city).
-	 *
-	 * @since 0.1.0
-	 * @param array<string, mixed> $args     Query arguments.
-	 * @param array<string>        $taxonomies Array of taxonomy names.
-	 * @return array<string, mixed> Modified query arguments.
-	 */
-	public function order_location_terms_hierarchically( array $args, array $taxonomies ): array {
-		// Only modify queries for our location taxonomy
-		if ( ! in_array( $this->taxonomy, $taxonomies, true ) ) {
-			return $args;
-		}
-		
-		// Don't override if a specific order is already set
-		if ( isset( $args['orderby'] ) && 'none' !== $args['orderby'] ) {
-			return $args;
-		}
-		
-		// Set default ordering to parent hierarchy
-		$args['orderby'] = 'parent';
-		$args['order'] = 'ASC';
-		
-		return $args;
-	}
-	
-	/**
-	 * Modify location terms query to order by hierarchy depth.
-	 *
-	 * Modifies the SQL query to ensure terms are ordered from
-	 * top-level parents down to children, maintaining the
-	 * country > state > city hierarchy.
-	 *
-	 * @since 0.1.0
-	 * @param array<string>        $clauses    Query clauses.
-	 * @param array<string>        $taxonomies Array of taxonomy names.
-	 * @param array<string, mixed> $args       Query arguments.
-	 * @return array<string> Modified query clauses.
-	 */
-	public function modify_location_terms_query( array $clauses, array $taxonomies, array $args ): array {
-		// Only modify queries for our location taxonomy
-		if ( ! in_array( $this->taxonomy, $taxonomies, true ) ) {
-			return $clauses;
-		}
-		
-		// Only modify if ordering by parent
-		if ( ! isset( $args['orderby'] ) || 'parent' !== $args['orderby'] ) {
-			return $clauses;
-		}
-		
-		global $wpdb;
-		
-		// Order by parent first (0 = top-level), then by term_id to maintain consistency
-		$clauses['orderby'] = "ORDER BY t.parent ASC, t.term_id ASC";
-		
-		return $clauses;
-	}
 	
 	/**
 	 * Register the location hierarchy display block.
+	 *
+	 * **What:** Registers the Gutenberg block for displaying location hierarchies.
+	 *
+	 * **Why:** Block-based themes and the Gutenberg editor require explicit block registration
+	 * to make blocks available in the block inserter. Using the build directory ensures
+	 * the block includes compiled assets (JS, CSS) from the build process.
+	 *
+	 * **How:** Uses register_block_type() with build directory path. WordPress automatically
+	 * loads block.json from that directory, which defines the block's metadata, scripts,
+	 * and render callback (render.php).
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -209,8 +211,14 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Add admin menu for plugin settings.
 	 *
-	 * Creates a submenu page under Settings for configuring
-	 * default geographic locations.
+	 * **What:** Creates a settings page under WordPress Settings menu.
+	 *
+	 * **Why:** Provides UI for configuring default geographic locations that can be used
+	 * when venue addresses don't contain complete information or as fallbacks.
+	 *
+	 * **How:** Uses add_options_page() to create submenu under Settings. Requires
+	 * 'manage_options' capability (typically only administrators) and renders via
+	 * render_admin_page() callback.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -228,7 +236,18 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Register plugin settings.
 	 *
-	 * Registers settings for default country, state, and city values.
+	 * **What:** Registers settings with WordPress Settings API for storing default location values.
+	 *
+	 * **Why:** WordPress Settings API provides secure storage, automatic sanitization hooks,
+	 * and integration with WordPress admin forms. Storing as array keeps related settings together
+	 * in a single option, reducing database queries.
+	 *
+	 * **How:** Uses register_setting() with:
+	 * - Option group: gatherpress_venue_hierarchy (matches settings_fields() in form)
+	 * - Option name: gatherpress_venue_hierarchy_defaults (database key)
+	 * - Type: array - Stores continent, country, state, city, street, street_number as associative array
+	 * - Sanitize callback: Runs before saving to database, ensures data integrity
+	 * - Default: Empty strings for all fields
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -241,9 +260,12 @@ class GatherPress_Venue_Hierarchy {
 				'type' => 'array',
 				'sanitize_callback' => array( $this, 'sanitize_settings' ),
 				'default' => array(
+					'continent' => '',
 					'country' => '',
 					'state' => '',
 					'city' => '',
+					'street' => '',
+					'street_number' => '',
 				),
 			)
 		);
@@ -252,11 +274,23 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Sanitize settings input.
 	 *
-	 * Ensures all settings values are properly sanitized before saving.
+	 * **What:** Validates and sanitizes user input from settings form before saving.
+	 *
+	 * **Why:** Critical security function - prevents XSS attacks and SQL injection by cleaning
+	 * all user input. Ensures data integrity by handling unexpected input gracefully.
+	 *
+	 * **How:** 
+	 * 1. Validates input is array (handles corrupted/malicious POST data)
+	 * 2. Uses null coalescing operator (??) for safe array access
+	 * 3. Applies sanitize_text_field() to each value (strips HTML/PHP tags, encodes special chars)
+	 * 4. Returns structured array matching expected format
+	 *
+	 * Example input: ['continent' => '<script>alert(1)</script>', 'country' => 'Germany']
+	 * Example output: ['continent' => '', 'country' => 'Germany', 'state' => '', 'city' => '', 'street' => '', 'street_number' => '']
 	 *
 	 * @since 0.1.0
 	 * @param mixed $input Raw settings input from form submission.
-	 * @return array<string, string> Sanitized settings array.
+	 * @return array<string, string> Sanitized settings array with keys: continent, country, state, city, street, street_number.
 	 */
 	public function sanitize_settings( $input ): array {
 		if ( ! is_array( $input ) ) {
@@ -264,17 +298,33 @@ class GatherPress_Venue_Hierarchy {
 		}
 		
 		return array(
+			'continent' => sanitize_text_field( $input['continent'] ?? '' ),
 			'country' => sanitize_text_field( $input['country'] ?? '' ),
 			'state' => sanitize_text_field( $input['state'] ?? '' ),
 			'city' => sanitize_text_field( $input['city'] ?? '' ),
+			'street' => sanitize_text_field( $input['street'] ?? '' ),
+			'street_number' => sanitize_text_field( $input['street_number'] ?? '' ),
 		);
 	}
 	
 	/**
 	 * Render the admin settings page.
 	 *
-	 * Displays the settings form for configuring default locations.
-	 * Includes fields for country, state, and city.
+	 * **What:** Outputs the HTML form for configuring default location settings.
+	 *
+	 * **Why:** Provides user interface for administrators to set default geographical terms
+	 * used as fallbacks during geocoding or when venue addresses are incomplete.
+	 *
+	 * **How:** 
+	 * 1. Checks user capability (security - only admins)
+	 * 2. Retrieves current settings from database with fallback defaults
+	 * 3. Validates data structure (handles corrupted options)
+	 * 4. Renders standard WordPress settings form using:
+	 *    - settings_fields(): Outputs nonces and hidden fields
+	 *    - Input names match array structure: name="option_name[key]"
+	 *    - submit_button(): WordPress-styled save button
+	 *
+	 * Form submits to options.php which handles validation and saving via Settings API.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -285,16 +335,22 @@ class GatherPress_Venue_Hierarchy {
 		}
 		
 		$defaults = get_option( 'gatherpress_venue_hierarchy_defaults', array(
+			'continent' => '',
 			'country' => '',
 			'state' => '',
 			'city' => '',
+			'street' => '',
+			'street_number' => '',
 		) );
 		
 		if ( ! is_array( $defaults ) ) {
 			$defaults = array(
+				'continent' => '',
 				'country' => '',
 				'state' => '',
 				'city' => '',
+				'street' => '',
+				'street_number' => '',
 			);
 		}
 		?>
@@ -303,6 +359,16 @@ class GatherPress_Venue_Hierarchy {
 			<form method="post" action="options.php">
 				<?php settings_fields( 'gatherpress_venue_hierarchy' ); ?>
 				<table class="form-table">
+					<tr>
+						<th scope="row">
+							<label for="default_continent"><?php esc_html_e( 'Default Continent', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_continent" name="gatherpress_venue_hierarchy_defaults[continent]" 
+								value="<?php echo esc_attr( $defaults['continent'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default continent for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
 					<tr>
 						<th scope="row">
 							<label for="default_country"><?php esc_html_e( 'Default Country', 'gatherpress-venue-hierarchy' ); ?></label>
@@ -333,6 +399,26 @@ class GatherPress_Venue_Hierarchy {
 							<p class="description"><?php esc_html_e( 'Default city for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row">
+							<label for="default_street"><?php esc_html_e( 'Default Street', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_street" name="gatherpress_venue_hierarchy_defaults[street]" 
+								value="<?php echo esc_attr( $defaults['street'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default street for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="default_street_number"><?php esc_html_e( 'Default Street Number', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_street_number" name="gatherpress_venue_hierarchy_defaults[street_number]" 
+								value="<?php echo esc_attr( $defaults['street_number'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default street number for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
 				</table>
 				<?php submit_button(); ?>
 			</form>
@@ -343,8 +429,28 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Maybe geocode event venue on save.
 	 *
-	 * Triggers geocoding and hierarchy generation when a GatherPress
-	 * event is saved. Skips if autosaving or if no venue address exists.
+	 * **What:** Triggers geocoding and location term creation when a GatherPress event is saved.
+	 *
+	 * **Why:** Automates the location hierarchy creation process so users don't have to manually
+	 * create taxonomy terms. Checks for existing terms to avoid re-geocoding on every save,
+	 * but will recreate terms if they were manually deleted.
+	 *
+	 * **How:**
+	 * 1. Early returns for autosave, non-event posts, missing GatherPress class
+	 * 2. Gets venue information via GatherPress Event class
+	 * 3. Checks if location terms already exist using wp_get_object_terms()
+	 * 4. Only geocodes if terms are missing/deleted, preventing unnecessary API calls
+	 * 5. Priority 20 ensures this runs AFTER GatherPress saves venue data (priority 10)
+	 *
+	 * Flow example:
+	 * - User saves event with venue "123 Main St, Munich, Germany"
+	 * - GatherPress saves venue data (priority 10)
+	 * - This function runs (priority 20)
+	 * - Checks for existing terms (none found)
+	 * - Calls geocode_and_create_hierarchy()
+	 * - Nominatim API returns coordinates + address components
+	 * - Creates terms: Europe > Germany > Bavaria > Munich > Main St > 123
+	 * - Associates all terms with the event
 	 *
 	 * @since 0.1.0
 	 * @param int     $post_id Post ID of the event.
@@ -372,18 +478,47 @@ class GatherPress_Venue_Hierarchy {
 			return;
 		}
 		
+		// Check if location terms already exist for this event
+		$existing_terms = wp_get_object_terms(
+			$post_id,
+			$this->taxonomy,
+			array( 'fields' => 'ids' )
+		);
+		
+		// If terms already exist and are valid, skip geocoding
+		if ( ! is_wp_error( $existing_terms ) && ! empty( $existing_terms ) ) {
+			return;
+		}
+		
+		// Terms don't exist or were deleted - geocode and create them
 		$this->geocode_and_create_hierarchy( $post_id, $venue_info['full_address'] );
 	}
 	
 	/**
 	 * Geocode address and create location hierarchy.
 	 *
-	 * Coordinates the geocoding process via Nominatim API and
-	 * generates the hierarchical location terms.
+	 * **What:** Coordinates the geocoding process and subsequent hierarchy term creation.
+	 *
+	 * **Why:** Separates concerns by delegating to specialized singleton classes:
+	 * Geocoder handles API communication, Hierarchy_Builder handles term creation.
+	 * This keeps the main class focused on coordination rather than implementation details.
+	 *
+	 * **How:**
+	 * 1. Gets Geocoder singleton instance
+	 * 2. Geocodes address via Nominatim API (or retrieves from cache)
+	 * 3. If geocoding succeeds, gets Hierarchy_Builder singleton
+	 * 4. Passes location data to builder for term creation
+	 * 5. Logs error if geocoding fails
+	 *
+	 * Example flow:
+	 * Input: $post_id=123, $address="Marienplatz 1, Munich, Germany"
+	 * Geocoder returns: ['continent'=>'Europe', 'country'=>'Germany', 'state'=>'Bavaria', 'city'=>'Munich', 'street'=>'Marienplatz', 'street_number'=>'1']
+	 * Hierarchy_Builder creates: Europe (parent:0) > Germany (parent:Europe_ID) > Bavaria (parent:Germany_ID) > Munich (parent:Bavaria_ID) > Marienplatz (parent:Munich_ID) > 1 (parent:Marienplatz_ID)
+	 * All term IDs associated with post 123
 	 *
 	 * @since 0.1.0
 	 * @param int    $post_id Post ID to associate terms with.
-	 * @param string $address Address to geocode.
+	 * @param string $address Address to geocode (e.g., "123 Main St, City, Country").
 	 * @return void
 	 */
 	private function geocode_and_create_hierarchy( int $post_id, string $address ): void {
@@ -403,9 +538,20 @@ class GatherPress_Venue_Hierarchy {
 /**
  * Geocoder class using Singleton pattern.
  *
- * Handles geocoding of addresses via the Nominatim OpenStreetMap API.
- * Includes caching to minimize API calls and parsing of location data
- * with special handling for German-speaking regions.
+ * **What:** Handles address geocoding via Nominatim OpenStreetMap API with caching.
+ *
+ * **Why:** Geocoding is rate-limited and slow - caching prevents repeated API calls for
+ * the same address. Nominatim provides free, open-source geocoding that returns detailed
+ * address components (country, state, city, street, house_number) needed for hierarchy building.
+ * Special handling for German-speaking regions accounts for different administrative structures.
+ *
+ * **How:** 
+ * - Uses WordPress transients for 1-hour caching (balance between freshness and API load)
+ * - Generates cache keys from address MD5 hash
+ * - Parses Nominatim's addressdetails response into standardized location array
+ * - Maps country codes to translated continent names using WordPress i18n
+ * - Handles regional variations (e.g., "state" vs "region" vs "province")
+ * - Extracts street and house_number for complete address hierarchy
  *
  * @since 0.1.0
  */
@@ -413,6 +559,9 @@ class GatherPress_Venue_Geocoder {
 	
 	/**
 	 * Single instance.
+	 *
+	 * **Why:** Singleton prevents multiple instances with potentially different configurations
+	 * and ensures consistent caching behavior across the request.
 	 *
 	 * @since 0.1.0
 	 * @var GatherPress_Venue_Geocoder|null
@@ -422,6 +571,11 @@ class GatherPress_Venue_Geocoder {
 	/**
 	 * Nominatim API endpoint.
 	 *
+	 * **What:** Base URL for OpenStreetMap's Nominatim geocoding service.
+	 *
+	 * **Why:** Nominatim is free, open-source, and returns detailed address components.
+	 * The /search endpoint accepts address queries and returns coordinates + detailed location data.
+	 *
 	 * @since 0.1.0
 	 * @var string
 	 */
@@ -429,6 +583,13 @@ class GatherPress_Venue_Geocoder {
 	
 	/**
 	 * Cache duration in seconds (1 hour).
+	 *
+	 * **What:** How long to cache geocoding results in WordPress transients.
+	 *
+	 * **Why:** Balance between data freshness and API load reduction:
+	 * - Too short: Excessive API calls, possible rate limiting
+	 * - Too long: Outdated results if addresses change
+	 * - 1 hour: Good compromise for venue addresses (rarely change within an hour)
 	 *
 	 * @since 0.1.0
 	 * @var int
@@ -458,16 +619,137 @@ class GatherPress_Venue_Geocoder {
 	private function __construct() {}
 	
 	/**
-	 * Geocode an address.
+	 * Get country to continent mapping.
 	 *
-	 * Queries the Nominatim API to get geographic coordinates and
-	 * location details. Results are cached for one hour.
+	 * **What:** Maps ISO 3166-1 alpha-2 country codes to translated continent names.
+	 *
+	 * **Why:** Nominatim API doesn't return continent information, so we must derive it
+	 * from country codes. Using WordPress's default translation domain (__()) ensures
+	 * continent names match WordPress core's translations, maintaining consistency.
+	 *
+	 * **How:** Returns comprehensive array covering ~200 countries organized by continent.
+	 * Uses lowercase country codes to match Nominatim's response format. Includes:
+	 * - All European countries (including special regions like Gibraltar, Vatican)
+	 * - North/South American countries
+	 * - Asian countries (including Middle East)
+	 * - African countries
+	 * - Oceanic nations
+	 * - Antarctica (for completeness)
+	 *
+	 * Example usage:
+	 * $mapping = $this->get_country_continents();
+	 * $continent = $mapping['de'] ?? __( 'Unknown' ); // Returns "Europe" (translated)
 	 *
 	 * @since 0.1.0
-	 * @param string $address Address to geocode.
-	 * @return array<string, string>|false Location data array with keys:
-	 *                                      'country', 'country_code', 'state', 'city'
-	 *                                      or false on failure.
+	 * @return array<string, string> Mapping of lowercase country codes to translated continent names.
+	 */
+	private function get_country_continents(): array {
+		return array(
+			// Europe
+			'de' => __( 'Europe' ), 'at' => __( 'Europe' ), 'ch' => __( 'Europe' ), 'fr' => __( 'Europe' ),
+			'it' => __( 'Europe' ), 'es' => __( 'Europe' ), 'pt' => __( 'Europe' ), 'uk' => __( 'Europe' ),
+			'gb' => __( 'Europe' ), 'ie' => __( 'Europe' ), 'nl' => __( 'Europe' ), 'be' => __( 'Europe' ),
+			'lu' => __( 'Europe' ), 'se' => __( 'Europe' ), 'no' => __( 'Europe' ), 'dk' => __( 'Europe' ),
+			'fi' => __( 'Europe' ), 'pl' => __( 'Europe' ), 'cz' => __( 'Europe' ), 'sk' => __( 'Europe' ),
+			'hu' => __( 'Europe' ), 'ro' => __( 'Europe' ), 'bg' => __( 'Europe' ), 'gr' => __( 'Europe' ),
+			'hr' => __( 'Europe' ), 'si' => __( 'Europe' ), 'rs' => __( 'Europe' ), 'ba' => __( 'Europe' ),
+			'me' => __( 'Europe' ), 'mk' => __( 'Europe' ), 'al' => __( 'Europe' ), 'tr' => __( 'Europe' ),
+			'ru' => __( 'Europe' ), 'ua' => __( 'Europe' ), 'by' => __( 'Europe' ), 'md' => __( 'Europe' ),
+			'ee' => __( 'Europe' ), 'lv' => __( 'Europe' ), 'lt' => __( 'Europe' ), 'is' => __( 'Europe' ),
+			// North America
+			'us' => __( 'North America' ), 'ca' => __( 'North America' ), 'mx' => __( 'North America' ),
+			'gt' => __( 'North America' ), 'bz' => __( 'North America' ), 'sv' => __( 'North America' ),
+			'hn' => __( 'North America' ), 'ni' => __( 'North America' ), 'cr' => __( 'North America' ),
+			'pa' => __( 'North America' ), 'cu' => __( 'North America' ), 'jm' => __( 'North America' ),
+			'ht' => __( 'North America' ), 'do' => __( 'North America' ), 'pr' => __( 'North America' ),
+			// South America
+			'br' => __( 'South America' ), 'ar' => __( 'South America' ), 'cl' => __( 'South America' ),
+			'co' => __( 'South America' ), 'pe' => __( 'South America' ), 've' => __( 'South America' ),
+			'ec' => __( 'South America' ), 'bo' => __( 'South America' ), 'py' => __( 'South America' ),
+			'uy' => __( 'South America' ), 'gy' => __( 'South America' ), 'sr' => __( 'South America' ),
+			// Asia
+			'cn' => __( 'Asia' ), 'jp' => __( 'Asia' ), 'in' => __( 'Asia' ), 'id' => __( 'Asia' ),
+			'pk' => __( 'Asia' ), 'bd' => __( 'Asia' ), 'ph' => __( 'Asia' ), 'vn' => __( 'Asia' ),
+			'th' => __( 'Asia' ), 'mm' => __( 'Asia' ), 'kr' => __( 'Asia' ), 'af' => __( 'Asia' ),
+			'kp' => __( 'Asia' ), 'tw' => __( 'Asia' ), 'my' => __( 'Asia' ), 'np' => __( 'Asia' ),
+			'lk' => __( 'Asia' ), 'kh' => __( 'Asia' ), 'la' => __( 'Asia' ), 'sg' => __( 'Asia' ),
+			'mn' => __( 'Asia' ), 'bt' => __( 'Asia' ), 'mv' => __( 'Asia' ), 'bn' => __( 'Asia' ),
+			'il' => __( 'Asia' ), 'jo' => __( 'Asia' ), 'lb' => __( 'Asia' ), 'sy' => __( 'Asia' ),
+			'iq' => __( 'Asia' ), 'ir' => __( 'Asia' ), 'sa' => __( 'Asia' ), 'ye' => __( 'Asia' ),
+			'om' => __( 'Asia' ), 'ae' => __( 'Asia' ), 'qa' => __( 'Asia' ), 'kw' => __( 'Asia' ),
+			'bh' => __( 'Asia' ), 'am' => __( 'Asia' ), 'az' => __( 'Asia' ), 'ge' => __( 'Asia' ),
+			'kz' => __( 'Asia' ), 'uz' => __( 'Asia' ), 'tm' => __( 'Asia' ), 'kg' => __( 'Asia' ),
+			'tj' => __( 'Asia' ),
+			// Africa
+			'ng' => __( 'Africa' ), 'et' => __( 'Africa' ), 'eg' => __( 'Africa' ), 'cd' => __( 'Africa' ),
+			'za' => __( 'Africa' ), 'tz' => __( 'Africa' ), 'ke' => __( 'Africa' ), 'ug' => __( 'Africa' ),
+			'dz' => __( 'Africa' ), 'sd' => __( 'Africa' ), 'ma' => __( 'Africa' ), 'ao' => __( 'Africa' ),
+			'gh' => __( 'Africa' ), 'mz' => __( 'Africa' ), 'mg' => __( 'Africa' ), 'cm' => __( 'Africa' ),
+			'ci' => __( 'Africa' ), 'ne' => __( 'Africa' ), 'bf' => __( 'Africa' ), 'ml' => __( 'Africa' ),
+			'mw' => __( 'Africa' ), 'zm' => __( 'Africa' ), 'so' => __( 'Africa' ), 'sn' => __( 'Africa' ),
+			'td' => __( 'Africa' ), 'zw' => __( 'Africa' ), 'gn' => __( 'Africa' ), 'rw' => __( 'Africa' ),
+			'bj' => __( 'Africa' ), 'tn' => __( 'Africa' ), 'bi' => __( 'Africa' ), 'ss' => __( 'Africa' ),
+			'tg' => __( 'Africa' ), 'sl' => __( 'Africa' ), 'ly' => __( 'Africa' ), 'lr' => __( 'Africa' ),
+			'mr' => __( 'Africa' ), 'cf' => __( 'Africa' ), 'er' => __( 'Africa' ), 'gm' => __( 'Africa' ),
+			'bw' => __( 'Africa' ), 'ga' => __( 'Africa' ), 'gw' => __( 'Africa' ), 'mu' => __( 'Africa' ),
+			'sz' => __( 'Africa' ), 'dj' => __( 'Africa' ), 'gq' => __( 'Africa' ), 'km' => __( 'Africa' ),
+			// Oceania
+			'au' => __( 'Oceania' ), 'pg' => __( 'Oceania' ), 'nz' => __( 'Oceania' ), 'fj' => __( 'Oceania' ),
+			'sb' => __( 'Oceania' ), 'nc' => __( 'Oceania' ), 'pf' => __( 'Oceania' ), 'vu' => __( 'Oceania' ),
+			'ws' => __( 'Oceania' ), 'ki' => __( 'Oceania' ), 'fm' => __( 'Oceania' ), 'to' => __( 'Oceania' ),
+			'pw' => __( 'Oceania' ), 'mh' => __( 'Oceania' ), 'nr' => __( 'Oceania' ), 'tv' => __( 'Oceania' ),
+			// Antarctica
+			'aq' => __( 'Antarctica' ),
+		);
+	}
+	
+	/**
+	 * Geocode an address.
+	 *
+	 * **What:** Converts a text address to geographic coordinates and location components.
+	 *
+	 * **Why:** Need structured location data (continent, country, state, city, street, street_number)
+	 * to build the taxonomy hierarchy. Caching prevents hitting API rate limits and improves performance.
+	 *
+	 * **How:**
+	 * 1. Sanitizes input address
+	 * 2. Generates cache key from MD5 hash (prevents cache collision for similar addresses)
+	 * 3. Checks transient cache (1-hour expiration)
+	 * 4. If cache miss, queries Nominatim API with:
+	 *    - q: Address query
+	 *    - format: json (structured response)
+	 *    - addressdetails: 1 (include address components)
+	 *    - limit: 1 (only need best match)
+	 * 5. Parses response via parse_location_data()
+	 * 6. Caches successful result
+	 * 7. Returns location array or false on failure
+	 *
+	 * Example API response:
+	 * [{
+	 *   "address": {
+	 *     "house_number": "1",
+	 *     "road": "Marienplatz",
+	 *     "city": "Munich",
+	 *     "state": "Bavaria",
+	 *     "country": "Germany",
+	 *     "country_code": "de"
+	 *   }
+	 * }]
+	 *
+	 * Example return value:
+	 * [
+	 *   'continent' => 'Europe',
+	 *   'country' => 'Germany',
+	 *   'country_code' => 'de',
+	 *   'state' => 'Bavaria',
+	 *   'city' => 'Munich',
+	 *   'street' => 'Marienplatz',
+	 *   'street_number' => '1'
+	 * ]
+	 *
+	 * @since 0.1.0
+	 * @param string $address Full address to geocode (e.g., "Marienplatz 1, 80331 Munich, Germany").
+	 * @return array<string, string>|false Location data array or false on failure.
 	 */
 	public function geocode( string $address ) {
 		$address = sanitize_text_field( $address );
@@ -521,11 +803,53 @@ class GatherPress_Venue_Geocoder {
 	/**
 	 * Parse location data from API response.
 	 *
-	 * Extracts country, state, and city information from the Nominatim
-	 * API response with special handling for German-speaking regions.
+	 * **What:** Extracts and normalizes location components from Nominatim API response.
+	 *
+	 * **Why:** Nominatim's response structure varies by country and address type. Need to:
+	 * 1. Handle different field names (state vs region vs province, road vs street)
+	 * 2. Add continent information (not in API response)
+	 * 3. Normalize to consistent structure for hierarchy building
+	 * 4. Account for German-speaking regions' unique administrative structure
+	 * 5. Extract street and house_number for complete address hierarchy
+	 *
+	 * **How:**
+	 * 1. Validates 'address' field exists in response
+	 * 2. Extracts country_code and uses it to lookup continent
+	 * 3. For German-speaking regions (DE, AT, CH, LU):
+	 *    - Uses 'state' field directly (Bundesland/Canton)
+	 * 4. For other countries:
+	 *    - Falls back through state > region > province (handles naming variations)
+	 * 5. Extracts city from city > town > village > county (urban to rural fallback)
+	 * 6. Extracts street from road > street > pedestrian (common field names)
+	 * 7. Extracts house_number for street number
+	 * 8. Sanitizes all values
+	 * 9. Filters out empty values with array_filter()
+	 *
+	 * Example input (German address):
+	 * [
+	 *   'address' => [
+	 *     'house_number' => '1',
+	 *     'road' => 'Marienplatz',
+	 *     'city' => 'Munich',
+	 *     'state' => 'Bavaria',
+	 *     'country' => 'Germany',
+	 *     'country_code' => 'de'
+	 *   ]
+	 * ]
+	 *
+	 * Example output:
+	 * [
+	 *   'continent' => 'Europe',
+	 *   'country' => 'Germany',
+	 *   'country_code' => 'de',
+	 *   'state' => 'Bavaria',
+	 *   'city' => 'Munich',
+	 *   'street' => 'Marienplatz',
+	 *   'street_number' => '1'
+	 * ]
 	 *
 	 * @since 0.1.0
-	 * @param array<string, mixed> $data API response data.
+	 * @param array<string, mixed> $data API response data (first result from Nominatim).
 	 * @return array<string, string>|false Parsed location data or false on failure.
 	 */
 	private function parse_location_data( array $data ) {
@@ -536,11 +860,18 @@ class GatherPress_Venue_Geocoder {
 		$address = $data['address'];
 		$country_code = strtolower( $address['country_code'] ?? '' );
 		
+		// Get continent from country code using translated names
+		$country_continents = $this->get_country_continents();
+		$continent = $country_continents[ $country_code ] ?? __( 'Unknown' );
+		
 		$location = array(
+			'continent' => $continent,
 			'country' => $this->sanitize_term_name( $address['country'] ?? '' ),
 			'country_code' => $country_code,
 			'state' => '',
 			'city' => '',
+			'street' => '',
+			'street_number' => '',
 		);
 		
 		$german_regions = array( 'de', 'at', 'ch', 'lu' );
@@ -558,17 +889,37 @@ class GatherPress_Venue_Geocoder {
 			$address['city'] ?? $address['town'] ?? $address['village'] ?? $address['county'] ?? ''
 		);
 		
+		// Extract street name (road is most common, but also check street and pedestrian)
+		$location['street'] = $this->sanitize_term_name(
+			$address['road'] ?? $address['street'] ?? $address['pedestrian'] ?? ''
+		);
+		
+		// Extract house/street number
+		$location['street_number'] = $this->sanitize_term_name(
+			$address['house_number'] ?? ''
+		);
+		
 		return array_filter( $location );
 	}
 	
 	/**
 	 * Sanitize term name.
 	 *
-	 * Removes unwanted characters and trims whitespace.
+	 * **What:** Cleans location name for safe use as taxonomy term.
+	 *
+	 * **Why:** Term names are displayed in UI and used in URLs - must be safe from XSS
+	 * and properly formatted. sanitize_text_field() strips HTML/PHP tags and normalizes whitespace.
+	 *
+	 * **How:** Applies WordPress core sanitize_text_field() which:
+	 * - Strips all HTML and PHP tags
+	 * - Removes line breaks
+	 * - Trims whitespace from ends
+	 * - Encodes special characters
+	 * Then applies trim() for additional whitespace cleanup.
 	 *
 	 * @since 0.1.0
-	 * @param string $name Term name to sanitize.
-	 * @return string Sanitized term name.
+	 * @param string $name Raw term name from API.
+	 * @return string Sanitized term name safe for database and display.
 	 */
 	private function sanitize_term_name( string $name ): string {
 		return trim( sanitize_text_field( $name ) );
@@ -578,8 +929,19 @@ class GatherPress_Venue_Geocoder {
 /**
  * Hierarchy builder class using Singleton pattern.
  *
- * Creates and manages hierarchical taxonomy terms for locations,
- * establishing parent-child relationships between country, state, and city.
+ * **What:** Creates and manages hierarchical taxonomy terms for geographical locations.
+ *
+ * **Why:** Separates term creation logic from geocoding logic (Single Responsibility Principle).
+ * Handles the complex task of establishing parent-child relationships between terms
+ * and ensuring terms exist before referencing them as parents. This prevents orphaned
+ * terms and maintains data integrity across 7 levels of hierarchy.
+ *
+ * **How:** 
+ * - Creates terms in top-down order (continent > country > state > city > street > street-number)
+ * - Each level uses parent's term_id as parent parameter
+ * - Checks for existing terms before creating (prevents duplicates)
+ * - Updates parent relationships if term exists with wrong parent
+ * - Associates all created terms with the event post
  *
  * @since 0.1.0
  */
@@ -587,6 +949,9 @@ class GatherPress_Venue_Hierarchy_Builder {
 	
 	/**
 	 * Single instance.
+	 *
+	 * **Why:** Singleton ensures consistent term creation behavior and prevents
+	 * potential race conditions from multiple instances creating duplicate terms.
 	 *
 	 * @since 0.1.0
 	 * @var GatherPress_Venue_Hierarchy_Builder|null
@@ -618,24 +983,61 @@ class GatherPress_Venue_Hierarchy_Builder {
 	/**
 	 * Create hierarchy terms.
 	 *
-	 * Generates hierarchical taxonomy terms for country, state, and city,
-	 * establishing proper parent-child relationships and associating them
-	 * with the specified post.
+	 * **What:** Generates complete hierarchical taxonomy term structure from location data.
+	 *
+	 * **Why:** Automates the creation of properly nested geographic terms
+	 * (continent > country > state > city > street > street-number) with correct parent-child relationships.
+	 * This enables filtering events at any geographic level and provides structured data for the display block.
+	 *
+	 * **How:**
+	 * 1. Creates terms in hierarchical order using cascading term IDs:
+	 *    - Continent (parent: 0 = root level)
+	 *    - Country (parent: continent_term_id)
+	 *    - State (parent: country_term_id)
+	 *    - City (parent: state_term_id)
+	 *    - Street (parent: city_term_id)
+	 *    - Street Number (parent: street_term_id)
+	 * 2. Each step uses get_or_create_term() which:
+	 *    - Checks if term exists by name
+	 *    - Creates if missing
+	 *    - Updates parent if wrong
+	 *    - Returns term_id for next level
+	 * 3. Collects all valid term IDs (filters out 0s from failures)
+	 * 4. Associates all terms with the event via wp_set_object_terms()
+	 *    - false parameter: Replace existing terms (not append)
+	 *
+	 * Example flow for "1 Marienplatz, Munich, Bavaria, Germany, Europe":
+	 * - Create/get "Europe" term (ID: 100, parent: 0)
+	 * - Create/get "Germany" term (ID: 101, parent: 100)
+	 * - Create/get "Bavaria" term (ID: 102, parent: 101)
+	 * - Create/get "Munich" term (ID: 103, parent: 102)
+	 * - Create/get "Marienplatz" term (ID: 104, parent: 103)
+	 * - Create/get "1" term (ID: 105, parent: 104)
+	 * - Associate post with terms [100, 101, 102, 103, 104, 105]
+	 *
+	 * **Result:** Event is tagged with complete hierarchy, browseable at any level.
 	 *
 	 * @since 0.1.0
 	 * @param int                  $post_id  Post ID to associate terms with.
 	 * @param array<string, string> $location Location data array with keys:
-	 *                                       'country', 'state', 'city'.
-	 * @param string               $taxonomy Taxonomy name.
+	 *                                       'continent', 'country', 'state', 'city', 'street', 'street_number'.
+	 * @param string               $taxonomy Taxonomy name (e.g., 'gatherpress-location').
 	 * @return void
 	 */
 	public function create_hierarchy_terms( int $post_id, array $location, string $taxonomy ): void {
+		$continent_term_id = 0;
 		$country_term_id = 0;
 		$state_term_id = 0;
 		$city_term_id = 0;
+		$street_term_id = 0;
+		$street_number_term_id = 0;
 		
-		if ( ! empty( $location['country'] ) ) {
-			$country_term_id = $this->get_or_create_term( $location['country'], 0, $taxonomy );
+		if ( ! empty( $location['continent'] ) ) {
+			$continent_term_id = $this->get_or_create_term( $location['continent'], 0, $taxonomy );
+		}
+		
+		if ( ! empty( $location['country'] ) && $continent_term_id ) {
+			$country_term_id = $this->get_or_create_term( $location['country'], $continent_term_id, $taxonomy );
 		}
 		
 		if ( ! empty( $location['state'] ) && $country_term_id ) {
@@ -646,7 +1048,15 @@ class GatherPress_Venue_Hierarchy_Builder {
 			$city_term_id = $this->get_or_create_term( $location['city'], $state_term_id, $taxonomy );
 		}
 		
-		$term_ids = array_filter( array( $country_term_id, $state_term_id, $city_term_id ) );
+		if ( ! empty( $location['street'] ) && $city_term_id ) {
+			$street_term_id = $this->get_or_create_term( $location['street'], $city_term_id, $taxonomy );
+		}
+		
+		if ( ! empty( $location['street_number'] ) && $street_term_id ) {
+			$street_number_term_id = $this->get_or_create_term( $location['street_number'], $street_term_id, $taxonomy );
+		}
+		
+		$term_ids = array_filter( array( $continent_term_id, $country_term_id, $state_term_id, $city_term_id, $street_term_id, $street_number_term_id ) );
 		
 		if ( ! empty( $term_ids ) ) {
 			wp_set_object_terms( $post_id, $term_ids, $taxonomy, false );
@@ -656,14 +1066,44 @@ class GatherPress_Venue_Hierarchy_Builder {
 	/**
 	 * Get or create term.
 	 *
-	 * Retrieves an existing term by name or creates it if it doesn't exist.
-	 * Updates parent relationship if the term exists but has wrong parent.
+	 * **What:** Retrieves existing term or creates new one with proper parent relationship.
+	 *
+	 * **Why:** Prevents duplicate terms and ensures consistent hierarchy. If a term exists
+	 * but has the wrong parent (e.g., from manual creation), it fixes the relationship.
+	 * This maintains data integrity when terms are created out of order or manually.
+	 *
+	 * **How:**
+	 * 1. Sanitizes term name (security + consistency)
+	 * 2. Checks if term exists using get_term_by('name', ...)
+	 *    - Looks up by exact name match in specified taxonomy
+	 * 3. If term exists:
+	 *    - Validates it's a WP_Term object
+	 *    - Checks if parent matches expected parent_id
+	 *    - Updates parent via wp_update_term() if mismatch
+	 *    - Returns existing term_id
+	 * 4. If term doesn't exist:
+	 *    - Creates via wp_insert_term() with parent
+	 *    - Handles errors (logs to error_log)
+	 *    - Returns new term_id or 0 on failure
+	 *
+	 * Example scenarios:
+	 * Scenario 1 - Create new:
+	 *   Input: name="Bavaria", parent_id=101 (Germany), taxonomy="gatherpress-location"
+	 *   Result: Creates term, returns ID 102
+	 *
+	 * Scenario 2 - Use existing:
+	 *   Input: name="Bavaria", parent_id=101, term already exists with correct parent
+	 *   Result: Returns existing ID 102
+	 *
+	 * Scenario 3 - Fix parent:
+	 *   Input: name="Bavaria", parent_id=101, term exists with parent_id=0
+	 *   Result: Updates parent to 101, returns ID 102
 	 *
 	 * @since 0.1.0
-	 * @param string $name      Term name.
-	 * @param int    $parent_id Parent term ID (0 for top-level).
+	 * @param string $name      Term name to find or create.
+	 * @param int    $parent_id Parent term ID (0 for root level).
 	 * @param string $taxonomy  Taxonomy name.
-	 * @return int Term ID, or 0 on failure.
+	 * @return int Term ID on success, 0 on failure.
 	 */
 	private function get_or_create_term( string $name, int $parent_id, string $taxonomy ): int {
 		$name = sanitize_text_field( $name );
@@ -704,8 +1144,15 @@ if ( ! function_exists( 'gatherpress_venue_hierarchy_init' ) ) {
 	/**
 	 * Initialize the plugin.
 	 *
-	 * Bootstrap function that initializes the main plugin class.
-	 * Hooked to 'plugins_loaded' to ensure WordPress core is fully loaded.
+	 * **What:** Bootstrap function that starts the plugin by initializing the main class.
+	 *
+	 * **Why:** Hooked to 'plugins_loaded' to ensure WordPress core is fully loaded before
+	 * attempting to register taxonomies, blocks, or interact with other plugins (GatherPress).
+	 * This prevents "class not found" errors and ensures proper initialization order.
+	 *
+	 * **How:** Gets singleton instance via get_instance(), which triggers the constructor
+	 * and registers all hooks. Guarded by function_exists() to prevent fatal errors if
+	 * plugin is loaded multiple times (rare but possible in some hosting environments).
 	 *
 	 * @since 0.1.0
 	 * @return void

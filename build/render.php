@@ -2,9 +2,18 @@
 /**
  * Block renderer for the location hierarchy display block.
  *
- * This file contains the singleton renderer class and serves as the
- * render callback for the block. It retrieves event venue information
- * and builds the complete hierarchical location path for display.
+ * **What:** This file serves as both the render callback for the Gutenberg block
+ * and contains the singleton renderer class that handles all display logic.
+ *
+ * **Why:** Separating rendering logic into its own class (Singleton pattern) ensures:
+ * - Consistent rendering behavior across multiple block instances
+ * - Testable, maintainable code separate from block registration
+ * - No duplicate term queries when multiple blocks render on same page
+ *
+ * **How:** WordPress calls this file as the render callback (defined in block.json).
+ * The file defines the renderer class, instantiates it, and calls its render() method.
+ * The renderer retrieves event venue information, builds hierarchical location paths,
+ * and outputs formatted HTML with optional term links.
  *
  * @package GatherPressVenueHierarchy
  * @since 0.1.0
@@ -18,9 +27,20 @@ if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 	/**
 	 * Block renderer class using Singleton pattern.
 	 *
-	 * Handles rendering of the location hierarchy display block,
-	 * retrieving event venue information and building the complete
-	 * hierarchical location path for display.
+	 * **What:** Handles rendering of the location hierarchy display block on frontend.
+	 *
+	 * **Why:** Retrieves event venue location data and builds human-readable hierarchical
+	 * paths (e.g., "Europe > Germany > Bavaria > Munich") for display. Singleton pattern
+	 * prevents duplicate term queries and ensures consistent rendering logic.
+	 *
+	 * **How:** 
+	 * - Validates post context (must be gatherpress_event)
+	 * - Retrieves location terms from taxonomy
+	 * - Optionally retrieves venue information from GatherPress
+	 * - Builds hierarchical paths by traversing parent relationships
+	 * - Filters paths based on startLevel/endLevel attributes
+	 * - Optionally wraps terms in archive links
+	 * - Outputs formatted HTML with block wrapper attributes
 	 *
 	 * @since 0.1.0
 	 */
@@ -28,6 +48,9 @@ if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 		
 		/**
 		 * Single instance.
+		 *
+		 * **Why:** Singleton prevents multiple instances that could cause duplicate
+		 * queries and ensures consistent behavior across block instances on same page.
 		 *
 		 * @since 0.1.0
 		 * @var GatherPress_Venue_Hierarchy_Block_Renderer|null
@@ -59,14 +82,39 @@ if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 		/**
 		 * Render block content.
 		 *
-		 * Retrieves the event's venue location hierarchy and renders
-		 * it as an inline text display with proper formatting.
+		 * **What:** Main rendering method called by WordPress for each block instance.
+		 *
+		 * **Why:** Generates the HTML output for displaying location hierarchies on the frontend.
+		 * Must validate context, retrieve data, and format output according to block attributes.
+		 *
+		 * **How:**
+		 * 1. Validates post ID and post type (must be gatherpress_event)
+		 * 2. Extracts block attributes (startLevel, endLevel, enableLinks, showVenue)
+		 * 3. Optionally retrieves venue information from GatherPress Event class
+		 * 4. Queries location terms for the event
+		 * 5. Builds hierarchical paths via build_hierarchy_paths()
+		 * 6. Appends venue name if requested
+		 * 7. Wraps output with block wrapper attributes (handles alignment, colors, etc.)
+		 * 8. Returns formatted HTML or empty string if no data
+		 *
+		 * Example output:
+		 * <p class="wp-block-telex-block-gatherpress-venue-hierarchy">
+		 *   Europe > Germany > Bavaria > Munich
+		 * </p>
+		 *
+		 * Example with links:
+		 * <p class="wp-block-telex-block-gatherpress-venue-hierarchy">
+		 *   <a href="/location/europe/">Europe</a> > 
+		 *   <a href="/location/europe/germany/">Germany</a> > 
+		 *   <a href="/location/europe/germany/bavaria/">Bavaria</a> > 
+		 *   <a href="/location/europe/germany/bavaria/munich/">Munich</a>
+		 * </p>
 		 *
 		 * @since 0.1.0
-		 * @param array<string, mixed> $attributes Block attributes.
-		 * @param string              $content    Block content.
-		 * @param \WP_Block            $block      Block instance.
-		 * @return string Rendered block HTML.
+		 * @param array<string, mixed> $attributes Block attributes from block.json.
+		 * @param string              $content    Block content (unused for dynamic blocks).
+		 * @param \WP_Block            $block      Block instance with context.
+		 * @return string Rendered block HTML or empty string.
 		 */
 		public function render( array $attributes, string $content, \WP_Block $block ): string {
 			// Get post ID from context
@@ -188,11 +236,17 @@ if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 		/**
 		 * Render output for venue-only display.
 		 *
-		 * Helper method to render just the venue when no location terms exist.
+		 * **What:** Helper method to render just the venue when no location terms exist.
+		 *
+		 * **Why:** DRY principle - prevents code duplication when venue-only display is needed
+		 * in multiple code paths (error cases, no terms, filtered-out terms).
+		 *
+		 * **How:** Formats venue name with optional link, wraps in block wrapper attributes,
+		 * returns complete HTML paragraph element.
 		 *
 		 * @since 0.1.0
 		 * @param string $venue_name  Venue name to display.
-		 * @param string $venue_link  Venue permalink (optional).
+		 * @param string $venue_link  Venue permalink (optional, empty string if not available).
 		 * @param bool   $enable_links Whether to link the venue.
 		 * @return string Rendered block HTML.
 		 */
@@ -219,18 +273,37 @@ if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 		/**
 		 * Build hierarchy paths from terms.
 		 *
-		 * Constructs complete hierarchical paths for each location term,
-		 * traversing parent relationships to build full location strings.
-		 * Only includes the deepest (most specific) term in each hierarchy branch.
-		 * Filters paths based on start and end level settings.
-		 * Optionally wraps each term in a link to its archive page.
+		 * **What:** Constructs complete hierarchical paths for display from taxonomy terms.
+		 *
+		 * **Why:** Events may have multiple location term assignments (e.g., multi-city event).
+		 * Need to find the "leaf" (most specific) terms, build full paths by traversing parents,
+		 * filter by level settings, and format for display with optional links.
+		 *
+		 * **How:**
+		 * 1. Identifies leaf terms (deepest terms in each branch):
+		 *    - Term is leaf if its ID doesn't appear in any other term's parent field
+		 *    - Example: [Europe(0), Germany(Europe), Bavaria(Germany), Munich(Bavaria)]
+		 *      Leaf = Munich (103) because 103 isn't anyone's parent
+		 * 2. Builds full path for each leaf term via build_term_path()
+		 * 3. Filters each path based on startLevel/endLevel:
+		 *    - Converts 1-based levels to 0-based array indices
+		 *    - Uses array_slice() to extract relevant portion
+		 *    - Example: Full path [Europe, Germany, Bavaria, Munich], levels 2-3
+		 *      Result: [Germany, Bavaria]
+		 * 4. Joins filtered paths with ' > ' separator
+		 * 5. Returns array of formatted path strings
+		 *
+		 * Example:
+		 * Input terms: Europe(0), Germany(1), Bavaria(2), Munich(3)
+		 * Input levels: start=1, end=3
+		 * Output: ["Europe > Germany > Bavaria"]
 		 *
 		 * @since 0.1.0
-		 * @param array<\WP_Term> $terms        Array of term objects.
-		 * @param int            $start_level  Starting hierarchy level (1-based).
-		 * @param int            $end_level    Ending hierarchy level (1-based).
-		 * @param bool           $enable_links Whether to link terms to their archives.
-		 * @return array<string> Array of formatted hierarchy paths.
+		 * @param array<\WP_Term> $terms        Array of term objects from wp_get_object_terms().
+		 * @param int            $start_level  Starting hierarchy level (1-based, 1=continent).
+		 * @param int            $end_level    Ending hierarchy level (1-based, 5=street).
+		 * @param bool           $enable_links Whether to wrap terms in archive links.
+		 * @return array<string> Array of formatted hierarchy path strings.
 		 */
 		private function build_hierarchy_paths( array $terms, int $start_level, int $end_level, bool $enable_links ): array {
 			if ( empty( $terms ) ) {
@@ -293,14 +366,36 @@ if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 		/**
 		 * Build term path.
 		 *
-		 * Recursively builds the complete hierarchical path for a term
-		 * by traversing parent relationships from child to root.
-		 * Optionally wraps each term in a link to its archive page.
+		 * **What:** Recursively builds complete hierarchical path from child term to root.
+		 *
+		 * **Why:** Terms store only their immediate parent, not the full ancestry. Need to
+		 * traverse parent relationships recursively to build complete paths like
+		 * "Europe > Germany > Bavaria > Munich". Loop detection prevents infinite recursion
+		 * if term relationships are corrupted.
+		 *
+		 * **How:**
+		 * 1. Initializes empty path array and visited tracking array
+		 * 2. Loops while current_term exists and max depth not exceeded:
+		 *    - Checks if term already visited (prevents infinite loops)
+		 *    - Formats term name with optional archive link
+		 *    - Prepends to path array (array_unshift for root-to-leaf order)
+		 *    - If term has parent, loads parent term and continues
+		 *    - If no parent (parent=0), breaks loop
+		 * 3. Max depth of 10 prevents runaway recursion
+		 * 4. Returns array of formatted term strings (plain text or HTML links)
+		 *
+		 * Example flow:
+		 * Input: Munich term (parent=102), enable_links=true
+		 * Step 1: path=["<a>Munich</a>"], current=Bavaria(102)
+		 * Step 2: path=["<a>Bavaria</a>", "<a>Munich</a>"], current=Germany(101)
+		 * Step 3: path=["<a>Germany</a>", "<a>Bavaria</a>", "<a>Munich</a>"], current=Europe(100)
+		 * Step 4: path=["<a>Europe</a>", "<a>Germany</a>", "<a>Bavaria</a>", "<a>Munich</a>"], parent=0, break
+		 * Output: ["<a>Europe</a>", "<a>Germany</a>", "<a>Bavaria</a>", "<a>Munich</a>"]
 		 *
 		 * @since 0.1.0
-		 * @param \WP_Term $term         Term object.
-		 * @param bool    $enable_links Whether to link terms to their archives.
-		 * @return array<string> Array of term names/links from root to leaf.
+		 * @param \WP_Term $term         Starting term object (usually a leaf term).
+		 * @param bool    $enable_links Whether to wrap each term in an archive link.
+		 * @return array<string> Array of formatted term names/links from root to leaf.
 		 */
 		private function build_term_path( \WP_Term $term, bool $enable_links ): array {
 			$path = array();

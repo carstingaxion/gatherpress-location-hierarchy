@@ -14,18 +14,18 @@ Adds hierarchical location taxonomy to GatherPress with automatic geocoding
 
 == Description ==
 
-This plugin enhances GatherPress by adding a new hierarchical "gatherpress-location" taxonomy. It automatically geocodes venue addresses using the Nominatim API and generates a structured hierarchy of geographic terms: country as top-level parent, state/region as child of country, and county/city as child of state.
+This plugin enhances GatherPress by adding a new hierarchical "gatherpress-location" taxonomy. It automatically geocodes venue addresses using the Nominatim API and generates a structured hierarchy of geographic terms: continent as top-level parent, country as child of continent, state/region as child of country, and county/city as child of state.
 
 Key features:
 
 * Creates new hierarchical "gatherpress-location" taxonomy
 * Works alongside existing GatherPress venue system
 * Automatic geocoding via Nominatim API with one-hour caching
-* Generates geographic hierarchy: Country > State > City
+* Generates geographic hierarchy: Continent > Country > State > City
 * Checks for existing terms before creation
 * Admin settings for default geographic terms
 * Support for German-speaking regions (DE, AT, CH, LU)
-* Filter events by location, city, state, or country
+* Filter events by location at any level
 * Custom block for displaying full location hierarchy as inline text
 * Singleton pattern implementation
 * Comprehensive error logging and validation
@@ -52,17 +52,17 @@ The plugin uses the Nominatim API to geocode venue addresses. Results are cached
 
 = Can I set default locations? =
 
-Yes, you can configure default country, state, and city terms in the plugin settings under Settings > GatherPress Location.
+Yes, you can configure default continent, country, state, and city terms in the plugin settings under Settings > GatherPress Location.
 
 = What regions are supported? =
 
-The plugin has enhanced support for German-speaking regions (Germany, Austria, Switzerland, Luxembourg) but works with any geographic location.
+The plugin has enhanced support for German-speaking regions (Germany, Austria, Switzerland, Luxembourg) but works with any geographic location worldwide.
 
 == Screenshots ==
 
 1. Admin settings page for configuring default geographic terms
 2. Location hierarchy block displaying inline location path
-3. Event filtered by country, state, or city
+3. Event filtered by continent, country, state, or city
 
 == Changelog ==
 
@@ -70,7 +70,7 @@ The plugin has enhanced support for German-speaking regions (Germany, Austria, S
 * Initial release
 * New hierarchical gatherpress-location taxonomy
 * Nominatim API geocoding integration
-* Geographic term hierarchy generation
+* Geographic term hierarchy generation with continent as top level
 * Admin settings panel
 * Custom location hierarchy display block
 * Caching and error handling
@@ -83,9 +83,9 @@ After activation, the plugin creates a new "gatherpress-location" taxonomy. When
 2. The plugin automatically geocodes and creates hierarchical location terms
 3. Use the admin settings to set default geographic locations
 4. Add the "Location Hierarchy Display" block to show location information
-5. Filter events by country, state, or city in both editor and frontend
+5. Filter events by continent, country, state, or city in both editor and frontend
 
-The location hierarchy block displays the complete path as inline text, for example: "Germany > Bavaria > Munich > Conference Center"]]></content>
+The location hierarchy block displays the complete path as inline text, for example: "Europe > Germany > Bavaria > Munich > Conference Center"]]></content>
   </file>
   <file path="gatherpress-venue-hierarchy.php">
     <description>This file contains the block registration code in the form of a single block plugin. Any other plugin related functionality should be added to this file. All block rendering functionality should go to the `render.php` file.</description>
@@ -164,6 +164,8 @@ class GatherPress_Venue_Hierarchy {
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'save_post_gatherpress_event', array( $this, 'maybe_geocode_event_venue' ), 20, 2 );
+		add_filter( 'get_terms_args', array( $this, 'order_location_terms_hierarchically' ), 10, 2 );
+		add_filter( 'terms_clauses', array( $this, 'modify_location_terms_query' ), 10, 3 );
 	}
 	
 	/**
@@ -184,7 +186,7 @@ class GatherPress_Venue_Hierarchy {
 	 * Register the hierarchical location taxonomy.
 	 *
 	 * Creates a hierarchical taxonomy for organizing venues
-	 * by country, state/region, and city.
+	 * by continent, country, state/region, and city.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -220,6 +222,61 @@ class GatherPress_Venue_Hierarchy {
 	}
 	
 	/**
+	 * Order location terms hierarchically.
+	 *
+	 * Modifies term query arguments to ensure location terms
+	 * are always ordered from parent to child (continent > country > state > city).
+	 *
+	 * @since 0.1.0
+	 * @param array<string, mixed> $args     Query arguments.
+	 * @param array<string>        $taxonomies Array of taxonomy names.
+	 * @return array<string, mixed> Modified query arguments.
+	 */
+	public function order_location_terms_hierarchically( array $args, array $taxonomies ): array {
+		if ( ! in_array( $this->taxonomy, $taxonomies, true ) ) {
+			return $args;
+		}
+		
+		if ( isset( $args['orderby'] ) && 'none' !== $args['orderby'] ) {
+			return $args;
+		}
+		
+		$args['orderby'] = 'parent';
+		$args['order'] = 'ASC';
+		
+		return $args;
+	}
+	
+	/**
+	 * Modify location terms query to order by hierarchy depth.
+	 *
+	 * Modifies the SQL query to ensure terms are ordered from
+	 * top-level parents down to children, maintaining the
+	 * continent > country > state > city hierarchy.
+	 *
+	 * @since 0.1.0
+	 * @param array<string>        $clauses    Query clauses.
+	 * @param array<string>        $taxonomies Array of taxonomy names.
+	 * @param array<string, mixed> $args       Query arguments.
+	 * @return array<string> Modified query clauses.
+	 */
+	public function modify_location_terms_query( array $clauses, array $taxonomies, array $args ): array {
+		if ( ! in_array( $this->taxonomy, $taxonomies, true ) ) {
+			return $clauses;
+		}
+		
+		if ( ! isset( $args['orderby'] ) || 'parent' !== $args['orderby'] ) {
+			return $clauses;
+		}
+		
+		global $wpdb;
+		
+		$clauses['orderby'] = "ORDER BY t.parent ASC, t.term_id ASC";
+		
+		return $clauses;
+	}
+	
+	/**
 	 * Register the location hierarchy display block.
 	 *
 	 * @since 0.1.0
@@ -251,7 +308,7 @@ class GatherPress_Venue_Hierarchy {
 	/**
 	 * Register plugin settings.
 	 *
-	 * Registers settings for default country, state, and city values.
+	 * Registers settings for default continent, country, state, and city values.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -264,6 +321,7 @@ class GatherPress_Venue_Hierarchy {
 				'type' => 'array',
 				'sanitize_callback' => array( $this, 'sanitize_settings' ),
 				'default' => array(
+					'continent' => '',
 					'country' => '',
 					'state' => '',
 					'city' => '',
@@ -287,6 +345,7 @@ class GatherPress_Venue_Hierarchy {
 		}
 		
 		return array(
+			'continent' => sanitize_text_field( $input['continent'] ?? '' ),
 			'country' => sanitize_text_field( $input['country'] ?? '' ),
 			'state' => sanitize_text_field( $input['state'] ?? '' ),
 			'city' => sanitize_text_field( $input['city'] ?? '' ),
@@ -297,7 +356,7 @@ class GatherPress_Venue_Hierarchy {
 	 * Render the admin settings page.
 	 *
 	 * Displays the settings form for configuring default locations.
-	 * Includes fields for country, state, and city.
+	 * Includes fields for continent, country, state, and city.
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -308,6 +367,7 @@ class GatherPress_Venue_Hierarchy {
 		}
 		
 		$defaults = get_option( 'gatherpress_venue_hierarchy_defaults', array(
+			'continent' => '',
 			'country' => '',
 			'state' => '',
 			'city' => '',
@@ -315,6 +375,7 @@ class GatherPress_Venue_Hierarchy {
 		
 		if ( ! is_array( $defaults ) ) {
 			$defaults = array(
+				'continent' => '',
 				'country' => '',
 				'state' => '',
 				'city' => '',
@@ -326,6 +387,16 @@ class GatherPress_Venue_Hierarchy {
 			<form method="post" action="options.php">
 				<?php settings_fields( 'gatherpress_venue_hierarchy' ); ?>
 				<table class="form-table">
+					<tr>
+						<th scope="row">
+							<label for="default_continent"><?php esc_html_e( 'Default Continent', 'gatherpress-venue-hierarchy' ); ?></label>
+						</th>
+						<td>
+							<input type="text" id="default_continent" name="gatherpress_venue_hierarchy_defaults[continent]" 
+								value="<?php echo esc_attr( $defaults['continent'] ?? '' ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Default continent for new venues', 'gatherpress-venue-hierarchy' ); ?></p>
+						</td>
+					</tr>
 					<tr>
 						<th scope="row">
 							<label for="default_country"><?php esc_html_e( 'Default Country', 'gatherpress-venue-hierarchy' ); ?></label>
@@ -428,7 +499,8 @@ class GatherPress_Venue_Hierarchy {
  *
  * Handles geocoding of addresses via the Nominatim OpenStreetMap API.
  * Includes caching to minimize API calls and parsing of location data
- * with special handling for German-speaking regions.
+ * with special handling for German-speaking regions. Extracts continent
+ * information as the top-level location hierarchy.
  *
  * @since 0.1.0
  */
@@ -457,6 +529,70 @@ class GatherPress_Venue_Geocoder {
 	 * @var int
 	 */
 	private $cache_duration = 3600;
+	
+	/**
+	 * Country to continent mapping.
+	 *
+	 * @since 0.1.0
+	 * @var array<string, string>
+	 */
+	private $country_continents = array(
+		// Europe
+		'de' => 'Europe', 'at' => 'Europe', 'ch' => 'Europe', 'fr' => 'Europe',
+		'it' => 'Europe', 'es' => 'Europe', 'pt' => 'Europe', 'uk' => 'Europe',
+		'gb' => 'Europe', 'ie' => 'Europe', 'nl' => 'Europe', 'be' => 'Europe',
+		'lu' => 'Europe', 'se' => 'Europe', 'no' => 'Europe', 'dk' => 'Europe',
+		'fi' => 'Europe', 'pl' => 'Europe', 'cz' => 'Europe', 'sk' => 'Europe',
+		'hu' => 'Europe', 'ro' => 'Europe', 'bg' => 'Europe', 'gr' => 'Europe',
+		'hr' => 'Europe', 'si' => 'Europe', 'rs' => 'Europe', 'ba' => 'Europe',
+		'me' => 'Europe', 'mk' => 'Europe', 'al' => 'Europe', 'tr' => 'Europe',
+		'ru' => 'Europe', 'ua' => 'Europe', 'by' => 'Europe', 'md' => 'Europe',
+		'ee' => 'Europe', 'lv' => 'Europe', 'lt' => 'Europe', 'is' => 'Europe',
+		// North America
+		'us' => 'North America', 'ca' => 'North America', 'mx' => 'North America',
+		'gt' => 'North America', 'bz' => 'North America', 'sv' => 'North America',
+		'hn' => 'North America', 'ni' => 'North America', 'cr' => 'North America',
+		'pa' => 'North America', 'cu' => 'North America', 'jm' => 'North America',
+		'ht' => 'North America', 'do' => 'North America', 'pr' => 'North America',
+		// South America
+		'br' => 'South America', 'ar' => 'South America', 'cl' => 'South America',
+		'co' => 'South America', 'pe' => 'South America', 've' => 'South America',
+		'ec' => 'South America', 'bo' => 'South America', 'py' => 'South America',
+		'uy' => 'South America', 'gy' => 'South America', 'sr' => 'South America',
+		// Asia
+		'cn' => 'Asia', 'jp' => 'Asia', 'in' => 'Asia', 'id' => 'Asia',
+		'pk' => 'Asia', 'bd' => 'Asia', 'ph' => 'Asia', 'vn' => 'Asia',
+		'th' => 'Asia', 'mm' => 'Asia', 'kr' => 'Asia', 'af' => 'Asia',
+		'kp' => 'Asia', 'tw' => 'Asia', 'my' => 'Asia', 'np' => 'Asia',
+		'lk' => 'Asia', 'kh' => 'Asia', 'la' => 'Asia', 'sg' => 'Asia',
+		'mn' => 'Asia', 'bt' => 'Asia', 'mv' => 'Asia', 'bn' => 'Asia',
+		'il' => 'Asia', 'jo' => 'Asia', 'lb' => 'Asia', 'sy' => 'Asia',
+		'iq' => 'Asia', 'ir' => 'Asia', 'sa' => 'Asia', 'ye' => 'Asia',
+		'om' => 'Asia', 'ae' => 'Asia', 'qa' => 'Asia', 'kw' => 'Asia',
+		'bh' => 'Asia', 'am' => 'Asia', 'az' => 'Asia', 'ge' => 'Asia',
+		'kz' => 'Asia', 'uz' => 'Asia', 'tm' => 'Asia', 'kg' => 'Asia',
+		'tj' => 'Asia',
+		// Africa
+		'ng' => 'Africa', 'et' => 'Africa', 'eg' => 'Africa', 'cd' => 'Africa',
+		'za' => 'Africa', 'tz' => 'Africa', 'ke' => 'Africa', 'ug' => 'Africa',
+		'dz' => 'Africa', 'sd' => 'Africa', 'ma' => 'Africa', 'ao' => 'Africa',
+		'gh' => 'Africa', 'mz' => 'Africa', 'mg' => 'Africa', 'cm' => 'Africa',
+		'ci' => 'Africa', 'ne' => 'Africa', 'bf' => 'Africa', 'ml' => 'Africa',
+		'mw' => 'Africa', 'zm' => 'Africa', 'so' => 'Africa', 'sn' => 'Africa',
+		'td' => 'Africa', 'zw' => 'Africa', 'gn' => 'Africa', 'rw' => 'Africa',
+		'bj' => 'Africa', 'tn' => 'Africa', 'bi' => 'Africa', 'ss' => 'Africa',
+		'tg' => 'Africa', 'sl' => 'Africa', 'ly' => 'Africa', 'lr' => 'Africa',
+		'mr' => 'Africa', 'cf' => 'Africa', 'er' => 'Africa', 'gm' => 'Africa',
+		'bw' => 'Africa', 'ga' => 'Africa', 'gw' => 'Africa', 'mu' => 'Africa',
+		'sz' => 'Africa', 'dj' => 'Africa', 'gq' => 'Africa', 'km' => 'Africa',
+		// Oceania
+		'au' => 'Oceania', 'pg' => 'Oceania', 'nz' => 'Oceania', 'fj' => 'Oceania',
+		'sb' => 'Oceania', 'nc' => 'Oceania', 'pf' => 'Oceania', 'vu' => 'Oceania',
+		'ws' => 'Oceania', 'ki' => 'Oceania', 'fm' => 'Oceania', 'to' => 'Oceania',
+		'pw' => 'Oceania', 'mh' => 'Oceania', 'nr' => 'Oceania', 'tv' => 'Oceania',
+		// Antarctica
+		'aq' => 'Antarctica',
+	);
 	
 	/**
 	 * Get singleton instance.
@@ -489,7 +625,7 @@ class GatherPress_Venue_Geocoder {
 	 * @since 0.1.0
 	 * @param string $address Address to geocode.
 	 * @return array<string, string>|false Location data array with keys:
-	 *                                      'country', 'country_code', 'state', 'city'
+	 *                                      'continent', 'country', 'country_code', 'state', 'city'
 	 *                                      or false on failure.
 	 */
 	public function geocode( string $address ) {
@@ -544,7 +680,7 @@ class GatherPress_Venue_Geocoder {
 	/**
 	 * Parse location data from API response.
 	 *
-	 * Extracts country, state, and city information from the Nominatim
+	 * Extracts continent, country, state, and city information from the Nominatim
 	 * API response with special handling for German-speaking regions.
 	 *
 	 * @since 0.1.0
@@ -559,7 +695,11 @@ class GatherPress_Venue_Geocoder {
 		$address = $data['address'];
 		$country_code = strtolower( $address['country_code'] ?? '' );
 		
+		// Get continent from country code
+		$continent = $this->country_continents[ $country_code ] ?? 'Unknown';
+		
 		$location = array(
+			'continent' => $continent,
 			'country' => $this->sanitize_term_name( $address['country'] ?? '' ),
 			'country_code' => $country_code,
 			'state' => '',
@@ -602,7 +742,7 @@ class GatherPress_Venue_Geocoder {
  * Hierarchy builder class using Singleton pattern.
  *
  * Creates and manages hierarchical taxonomy terms for locations,
- * establishing parent-child relationships between country, state, and city.
+ * establishing parent-child relationships between continent, country, state, and city.
  *
  * @since 0.1.0
  */
@@ -641,24 +781,29 @@ class GatherPress_Venue_Hierarchy_Builder {
 	/**
 	 * Create hierarchy terms.
 	 *
-	 * Generates hierarchical taxonomy terms for country, state, and city,
+	 * Generates hierarchical taxonomy terms for continent, country, state, and city,
 	 * establishing proper parent-child relationships and associating them
 	 * with the specified post.
 	 *
 	 * @since 0.1.0
 	 * @param int                  $post_id  Post ID to associate terms with.
 	 * @param array<string, string> $location Location data array with keys:
-	 *                                       'country', 'state', 'city'.
+	 *                                       'continent', 'country', 'state', 'city'.
 	 * @param string               $taxonomy Taxonomy name.
 	 * @return void
 	 */
 	public function create_hierarchy_terms( int $post_id, array $location, string $taxonomy ): void {
+		$continent_term_id = 0;
 		$country_term_id = 0;
 		$state_term_id = 0;
 		$city_term_id = 0;
 		
-		if ( ! empty( $location['country'] ) ) {
-			$country_term_id = $this->get_or_create_term( $location['country'], 0, $taxonomy );
+		if ( ! empty( $location['continent'] ) ) {
+			$continent_term_id = $this->get_or_create_term( $location['continent'], 0, $taxonomy );
+		}
+		
+		if ( ! empty( $location['country'] ) && $continent_term_id ) {
+			$country_term_id = $this->get_or_create_term( $location['country'], $continent_term_id, $taxonomy );
 		}
 		
 		if ( ! empty( $location['state'] ) && $country_term_id ) {
@@ -669,7 +814,7 @@ class GatherPress_Venue_Hierarchy_Builder {
 			$city_term_id = $this->get_or_create_term( $location['city'], $state_term_id, $taxonomy );
 		}
 		
-		$term_ids = array_filter( array( $country_term_id, $state_term_id, $city_term_id ) );
+		$term_ids = array_filter( array( $continent_term_id, $country_term_id, $state_term_id, $city_term_id ) );
 		
 		if ( ! empty( $term_ids ) ) {
 			wp_set_object_terms( $post_id, $term_ids, $taxonomy, false );
@@ -754,14 +899,36 @@ if ( ! function_exists( 'gatherpress_venue_hierarchy_init' ) ) {
 	"description": "Displays the complete location hierarchy as inline text",
 	"example": {},
 	"attributes": {
-		"venueId": {
+		"startLevel": {
 			"type": "number",
-			"default": 0
+			"default": 1
+		},
+		"endLevel": {
+			"type": "number",
+			"default": 999
+		},
+		"enableLinks": {
+			"type": "boolean",
+			"default": false
+		},
+		"linkColor": {
+			"type": "string",
+			"default": ""
+		},
+		"showVenue": {
+			"type": "boolean",
+			"default": false
 		}
 	},
+	"usesContext": ["postId", "postType"],
 	"supports": {
 		"html": false,
-		"align": true
+		"align": true,
+		"color": {
+			"link": true,
+			"text": true,
+			"background": true
+		}
 	},
 	"textdomain": "gatherpress-venue-hierarchy",
 	"editorScript": "file:./index.js",
@@ -824,10 +991,10 @@ import { __ } from '@wordpress/i18n';
  * @see https://developer.wordpress.org/block-editor/reference-guides/packages/packages-block-editor/#useblockprops
  */
 import { useBlockProps, InspectorControls } from '@wordpress/block-editor';
-import { PanelBody, SelectControl, Spinner } from '@wordpress/components';
-import { useSelect } from '@wordpress/data';
-import { store as coreDataStore } from '@wordpress/core-data';
+import { PanelBody, ToggleControl, Spinner } from '@wordpress/components';
 import { useState, useEffect } from '@wordpress/element';
+import { useSelect } from '@wordpress/data';
+import apiFetch from '@wordpress/api-fetch';
 
 /**
  * Lets webpack process CSS, SASS or SCSS files referenced in JavaScript files.
@@ -838,6 +1005,136 @@ import { useState, useEffect } from '@wordpress/element';
 import './editor.scss';
 
 /**
+ * Custom Dual Range Control Component
+ *
+ * A range slider with two handles for selecting start and end levels.
+ */
+function DualRangeControl( { startLevel, endLevel, maxLevel, onChange } ) {
+	const [ isDragging, setIsDragging ] = useState( null );
+	const [ trackRef, setTrackRef ] = useState( null );
+	
+	const levelLabels = [
+		__( 'Continent', 'gatherpress-venue-hierarchy' ),
+		__( 'Country', 'gatherpress-venue-hierarchy' ),
+		__( 'State', 'gatherpress-venue-hierarchy' ),
+		__( 'City', 'gatherpress-venue-hierarchy' ),
+		__( 'Street', 'gatherpress-venue-hierarchy' ),
+	];
+	
+	const getPositionFromLevel = ( level ) => {
+		return ( ( level - 1 ) / ( maxLevel - 1 ) ) * 100;
+	};
+	
+	const getLevelFromPosition = ( clientX ) => {
+		if ( ! trackRef ) return 1;
+		
+		const rect = trackRef.getBoundingClientRect();
+		const position = ( clientX - rect.left ) / rect.width;
+		const level = Math.round( position * ( maxLevel - 1 ) ) + 1;
+		
+		return Math.max( 1, Math.min( maxLevel, level ) );
+	};
+	
+	const handleMouseDown = ( handle ) => ( e ) => {
+		e.preventDefault();
+		setIsDragging( handle );
+	};
+	
+	const handleMouseMove = ( e ) => {
+		if ( ! isDragging ) return;
+		
+		const newLevel = getLevelFromPosition( e.clientX );
+		
+		if ( isDragging === 'start' ) {
+			if ( newLevel <= endLevel ) {
+				onChange( { startLevel: newLevel, endLevel } );
+			}
+		} else if ( isDragging === 'end' ) {
+			if ( newLevel >= startLevel ) {
+				onChange( { startLevel, endLevel: newLevel } );
+			}
+		}
+	};
+	
+	const handleMouseUp = () => {
+		setIsDragging( null );
+	};
+	
+	useEffect( () => {
+		if ( isDragging ) {
+			document.addEventListener( 'mousemove', handleMouseMove );
+			document.addEventListener( 'mouseup', handleMouseUp );
+			
+			return () => {
+				document.removeEventListener( 'mousemove', handleMouseMove );
+				document.removeEventListener( 'mouseup', handleMouseUp );
+			};
+		}
+	}, [ isDragging, startLevel, endLevel ] );
+	
+	const startPos = getPositionFromLevel( startLevel );
+	const endPos = getPositionFromLevel( endLevel );
+	
+	return (
+		<div className="dual-range-control">
+			<div className="dual-range-control__labels">
+				{ levelLabels.slice( 0, maxLevel ).map( ( label, index ) => (
+					<span key={ index } className="dual-range-control__label">
+						{ label }
+					</span>
+				) ) }
+			</div>
+			
+			<div className="dual-range-control__track-container">
+				<div 
+					ref={ setTrackRef }
+					className="dual-range-control__track"
+				>
+					<div 
+						className="dual-range-control__range"
+						style={ {
+							left: `${ startPos }%`,
+							width: `${ endPos - startPos }%`,
+						} }
+					/>
+					
+					<button
+						type="button"
+						className={ `dual-range-control__handle dual-range-control__handle--start ${ isDragging === 'start' ? 'is-dragging' : '' }` }
+						style={ { left: `${ startPos }%` } }
+						onMouseDown={ handleMouseDown( 'start' ) }
+						aria-label={ __( 'Start level', 'gatherpress-venue-hierarchy' ) }
+					/>
+					
+					<button
+						type="button"
+						className={ `dual-range-control__handle dual-range-control__handle--end ${ isDragging === 'end' ? 'is-dragging' : '' }` }
+						style={ { left: `${ endPos }%` } }
+						onMouseDown={ handleMouseDown( 'end' ) }
+						aria-label={ __( 'End level', 'gatherpress-venue-hierarchy' ) }
+					/>
+				</div>
+			</div>
+			
+			<div className="dual-range-control__output">
+				<span className="dual-range-control__output-label">
+					{ __( 'Showing:', 'gatherpress-venue-hierarchy' ) }
+				</span>
+				<strong>
+					{ levelLabels[ startLevel - 1 ] || '' }
+					{ startLevel !== endLevel && (
+						<>
+							{ ' ' + __( 'to', 'gatherpress-venue-hierarchy' ) + ' ' }
+							{ levelLabels[ endLevel - 1 ] || '' }
+						</>
+					) }
+				</strong>
+			</div>
+		</div>
+	);
+}
+
+/**
  * The edit function describes the structure of your block in the context of the
  * editor. This represents what the editor will render when the block is used.
  *
@@ -845,133 +1142,202 @@ import './editor.scss';
  *
  * @return {Element} Element to render.
  */
-export default function Edit( { attributes, setAttributes } ) {
-	const { venueId } = attributes;
+export default function Edit( { attributes, setAttributes, context } ) {
+	const { startLevel, endLevel, enableLinks, showVenue } = attributes;
 	const [ locationHierarchy, setLocationHierarchy ] = useState( '' );
+	const [ venueName, setVenueName ] = useState( '' );
+	const [ maxDepth, setMaxDepth ] = useState( 5 );
+	const [ isLoading, setIsLoading ] = useState( true );
+	const [ error, setError ] = useState( null );
 	
-	const { venues, isLoadingVenues } = useSelect( ( select ) => {
-		const { getEntityRecords, isResolving } = select( coreDataStore );
-		
-		return {
-			venues: getEntityRecords( 'postType', 'gatherpress_venue', {
-				per_page: -1,
-				orderby: 'title',
-				order: 'asc',
-			} ),
-			isLoadingVenues: isResolving( 'getEntityRecords', [
-				'postType',
-				'gatherpress_venue',
-				{ per_page: -1 }
-			] ),
-		};
+	// Get the current post ID from the editor store
+	const currentPostId = useSelect( ( select ) => {
+		return select( 'core/editor' ).getCurrentPostId();
 	}, [] );
 	
-	const { locationTerms } = useSelect( ( select ) => {
-		if ( ! venueId ) {
-			return { locationTerms: null };
-		}
-		
-		const { getEntityRecord } = select( coreDataStore );
-		const venue = getEntityRecord( 'postType', 'gatherpress_venue', venueId );
-		
-		if ( ! venue || ! venue['gatherpress-location'] ) {
-			return { locationTerms: null };
-		}
-		
-		return {
-			locationTerms: venue['gatherpress-location'],
-		};
-	}, [ venueId ] );
+	// Get the current post type from the editor store
+	const currentPostType = useSelect( ( select ) => {
+		return select( 'core/editor' ).getCurrentPostType();
+	}, [] );
+	
+	// Use context values as fallback, but prefer the editor store values
+	const postId = currentPostId || context.postId;
+	const postType = currentPostType || context.postType;
+	
+	// Check if we're in a GatherPress event context
+	if ( postType && postType !== 'gatherpress_event' ) {
+		return (
+			<p { ...useBlockProps() }>
+				{ __( 'This block must be used within a GatherPress event', 'gatherpress-venue-hierarchy' ) }
+			</p>
+		);
+	}
 	
 	useEffect( () => {
-		if ( ! locationTerms || locationTerms.length === 0 ) {
-			setLocationHierarchy( __( 'No venue selected or no location hierarchy available', 'gatherpress-venue-hierarchy' ) );
+		if ( ! postId ) {
+			setLocationHierarchy( __( 'No post ID available', 'gatherpress-venue-hierarchy' ) );
+			setIsLoading( false );
 			return;
 		}
 		
-		const fetchHierarchy = async () => {
+		const fetchLocationData = async () => {
 			try {
-				const termIds = Array.isArray( locationTerms ) ? locationTerms : [ locationTerms ];
-				const hierarchy = [];
+				setIsLoading( true );
+				setError( null );
 				
-				for ( const termId of termIds ) {
-					const term = await window.wp.apiFetch( {
-						path: `/wp/v2/gatherpress-location/${ termId }`,
+				// Fetch terms directly via REST API
+				const terms = await apiFetch( {
+					path: `/wp/v2/gatherpress-location?post=${ postId }&per_page=100`,
+				} );
+				
+				// Fetch event data to get venue information
+				let eventVenueName = '';
+				try {
+					const event = await apiFetch( {
+						path: `/wp/v2/gatherpress_event/${ postId }`,
 					} );
 					
-					if ( term ) {
-						const path = await buildTermPath( term.id );
-						hierarchy.push( path );
+					if ( event && event.venue ) {
+						eventVenueName = event.venue.name || '';
 					}
+				} catch ( venueError ) {
+					console.log( 'Could not fetch venue information:', venueError );
 				}
 				
-				if ( hierarchy.length > 0 ) {
-					setLocationHierarchy( hierarchy.join( ', ' ) );
+				setVenueName( eventVenueName );
+				
+				if ( ! terms || terms.length === 0 ) {
+					if ( showVenue && eventVenueName ) {
+						setLocationHierarchy( eventVenueName );
+					} else {
+						setLocationHierarchy( __( 'No location hierarchy available for this event', 'gatherpress-venue-hierarchy' ) );
+					}
+					setIsLoading( false );
+					return;
 				}
-			} catch ( error ) {
-				setLocationHierarchy( __( 'Error loading location hierarchy', 'gatherpress-venue-hierarchy' ) );
+				
+				const buildTermPath = ( term, allTerms ) => {
+					const path = [];
+					let currentTerm = term;
+					
+					while ( currentTerm ) {
+						path.unshift( currentTerm.name );
+						
+						if ( currentTerm.parent && currentTerm.parent !== 0 ) {
+							currentTerm = allTerms.find( t => t.id === currentTerm.parent );
+						} else {
+							break;
+						}
+					}
+					
+					return path;
+				};
+				
+				// Find leaf terms (deepest terms in each hierarchy)
+				const termIds = terms.map( t => t.id );
+				const parentIds = terms.map( t => t.parent );
+				const leafTerms = terms.filter( term => ! parentIds.includes( term.id ) );
+				
+				const hierarchyPaths = leafTerms.map( term => buildTermPath( term, terms ) );
+				
+				// Calculate the maximum depth
+				const calculatedMaxDepth = Math.max( ...hierarchyPaths.map( path => path.length ) );
+				setMaxDepth( Math.min( calculatedMaxDepth, 5 ) ); // Cap at 5 levels
+				
+				// Filter paths based on start and end levels
+				const filteredPaths = hierarchyPaths.map( path => {
+					const actualStartLevel = Math.max( 1, startLevel );
+					const actualEndLevel = Math.min( endLevel, path.length );
+					
+					if ( actualStartLevel > path.length ) {
+						return '';
+					}
+					
+					return path.slice( actualStartLevel - 1, actualEndLevel ).join( ' > ' );
+				} ).filter( path => path !== '' );
+				
+				if ( filteredPaths.length > 0 ) {
+					let hierarchyText = filteredPaths.join( ', ' );
+					
+					// Add venue name if requested and available
+					if ( showVenue && eventVenueName ) {
+						hierarchyText += ' > ' + eventVenueName;
+					}
+					
+					setLocationHierarchy( hierarchyText );
+				} else {
+					// If no filtered paths but venue is requested, show just venue
+					if ( showVenue && eventVenueName ) {
+						setLocationHierarchy( eventVenueName );
+					} else {
+						setLocationHierarchy( __( 'No location hierarchy available at selected levels', 'gatherpress-venue-hierarchy' ) );
+					}
+				}
+				setIsLoading( false );
+			} catch ( err ) {
+				console.error( 'Error fetching location data:', err );
+				setError( err.message || 'Unknown error' );
+				
+				// Even on error, try to show venue if requested
+				if ( showVenue && venueName ) {
+					setLocationHierarchy( venueName );
+				} else {
+					setLocationHierarchy( __( 'Error loading location hierarchy', 'gatherpress-venue-hierarchy' ) );
+				}
+				setIsLoading( false );
 			}
 		};
 		
-		fetchHierarchy();
-	}, [ locationTerms ] );
+		fetchLocationData();
+	}, [ postId, startLevel, endLevel, showVenue ] );
 	
-	const buildTermPath = async ( termId ) => {
-		const path = [];
-		let currentTermId = termId;
-		
-		while ( currentTermId ) {
-			try {
-				const term = await window.wp.apiFetch( {
-					path: `/wp/v2/gatherpress-location/${ currentTermId }`,
-				} );
-				
-				if ( term ) {
-					path.unshift( term.name );
-					currentTermId = term.parent;
-				} else {
-					break;
-				}
-			} catch ( error ) {
-				break;
-			}
-		}
-		
-		return path.join( ' > ' );
-	};
-	
-	const venueOptions = [
-		{ label: __( 'Select a venue...', 'gatherpress-venue-hierarchy' ), value: 0 },
-	];
-	
-	if ( venues ) {
-		venues.forEach( ( venue ) => {
-			venueOptions.push( {
-				label: venue.title.rendered,
-				value: venue.id,
-			} );
-		} );
+	if ( error ) {
+		return (
+			<p { ...useBlockProps() }>
+				{ __( 'Error: ', 'gatherpress-venue-hierarchy' ) } { error }
+			</p>
+		);
 	}
 	
 	return (
 		<>
 			<InspectorControls>
-				<PanelBody title={ __( 'Venue Settings', 'gatherpress-venue-hierarchy' ) }>
-					{ isLoadingVenues ? (
-						<Spinner />
-					) : (
-						<SelectControl
-							label={ __( 'Select Venue', 'gatherpress-venue-hierarchy' ) }
-							value={ venueId }
-							options={ venueOptions }
-							onChange={ ( value ) => setAttributes( { venueId: parseInt( value, 10 ) } ) }
-							help={ __( 'Choose a venue to display its location hierarchy', 'gatherpress-venue-hierarchy' ) }
-						/>
-					) }
+				<PanelBody
+					title={ __( 'Hierarchy Levels', 'gatherpress-venue-hierarchy' ) }
+					initialOpen={ true }
+				>
+					<DualRangeControl
+						startLevel={ startLevel }
+						endLevel={ Math.min( endLevel, maxDepth ) }
+						maxLevel={ maxDepth }
+						onChange={ ( { startLevel: newStart, endLevel: newEnd } ) => {
+							setAttributes( {
+								startLevel: newStart,
+								endLevel: newEnd,
+							} );
+						} }
+					/>
+				</PanelBody>
+				<PanelBody
+					title={ __( 'Display Options', 'gatherpress-venue-hierarchy' ) }
+					initialOpen={ true }
+				>
+					<ToggleControl
+						label={ __( 'Show venue', 'gatherpress-venue-hierarchy' ) }
+						help={ __( 'Display the venue name at the end of the location hierarchy', 'gatherpress-venue-hierarchy' ) }
+						checked={ showVenue }
+						onChange={ ( value ) => setAttributes( { showVenue: value } ) }
+					/>
+					<ToggleControl
+						label={ __( 'Enable term links', 'gatherpress-venue-hierarchy' ) }
+						help={ __( 'Link each location term to its archive page', 'gatherpress-venue-hierarchy' ) }
+						checked={ enableLinks }
+						onChange={ ( value ) => setAttributes( { enableLinks: value } ) }
+					/>
 				</PanelBody>
 			</InspectorControls>
 			<p { ...useBlockProps() }>
-				{ venueId ? locationHierarchy : __( 'Please select a venue from the block settings', 'gatherpress-venue-hierarchy' ) }
+				{ isLoading ? <Spinner /> : locationHierarchy }
 			</p>
 		</>
 	);
@@ -984,8 +1350,7 @@ export default function Edit( { attributes, setAttributes } ) {
   </file>
   <file path="src/style.scss">
     <description>This file contains styles for the block in the front end.</description>
-    <content><![CDATA[
-  /**
+    <content><![CDATA[/**
  * The following styles get applied both on the front of your site
  * and in the editor.
  *
@@ -1018,27 +1383,142 @@ export default function Edit( { attributes, setAttributes } ) {
 		margin-left: 0;
 		margin-right: 0;
 	}
-}
-	]]></content>
+	
+	// Link styles
+	.gatherpress-location-link {
+		color: inherit;
+		text-decoration: none;
+		transition: opacity 0.2s ease;
+		
+		&:hover {
+			opacity: 0.7;
+			text-decoration: underline;
+		}
+		
+		&:focus {
+			outline: 2px solid currentColor;
+			outline-offset: 2px;
+		}
+	}
+	
+	// Venue link with slightly different styling
+	.gatherpress-venue-link {
+		font-weight: 500;
+	}
+}]]></content>
   </file>
   <file path="src/editor.scss">
     <description>This file contains styles for the block in the editor.</description>
-    <content><![CDATA[
-  /**
+    <content><![CDATA[/**
  * The following styles get applied inside the editor only.
  *
  * Replace them with your own styles or remove the file completely.
  */
 
 .wp-block-telex-block-gatherpress-venue-hierarchy {
-	border: 1px dashed #ccc;
-	min-height: 2em;
-	
-	&:hover {
-		border-color: #0073aa;
-	}
+	// Remove extra styling - let it match frontend
 }
-	]]></content>
+
+/* Dual Range Control Styles */
+.dual-range-control {
+	padding: 16px 0;
+	
+	&__labels {
+		display: flex;
+		justify-content: space-between;
+		margin-bottom: 12px;
+		padding: 0 8px;
+	}
+	
+	&__label {
+		font-size: 11px;
+		color: #757575;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+	
+	&__track-container {
+		padding: 0 8px;
+		margin-bottom: 16px;
+	}
+	
+	&__track {
+		position: relative;
+		height: 4px;
+		background-color: #ddd;
+		border-radius: 2px;
+		cursor: pointer;
+	}
+	
+	&__range {
+		position: absolute;
+		top: 0;
+		height: 100%;
+		background-color: #0073aa;
+		border-radius: 2px;
+		pointer-events: none;
+	}
+	
+	&__handle {
+		position: absolute;
+		top: 50%;
+		width: 20px;
+		height: 20px;
+		margin-left: -10px;
+		margin-top: -10px;
+		background-color: #fff;
+		border: 2px solid #0073aa;
+		border-radius: 50%;
+		cursor: grab;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		transition: transform 0.1s ease, box-shadow 0.1s ease;
+		z-index: 2;
+		
+		&:hover {
+			transform: scale(1.15);
+			box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+		}
+		
+		&:focus {
+			outline: 2px solid #0073aa;
+			outline-offset: 2px;
+		}
+		
+		&.is-dragging {
+			cursor: grabbing;
+			transform: scale(1.25);
+			box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+			z-index: 3;
+		}
+		
+		&--start {
+			background-color: #fff;
+		}
+		
+		&--end {
+			background-color: #fff;
+		}
+	}
+	
+	&__output {
+		text-align: center;
+		padding: 8px 12px;
+		background-color: #f7f7f7;
+		border-radius: 4px;
+		font-size: 13px;
+		
+		&-label {
+			color: #757575;
+			margin-right: 6px;
+		}
+		
+		strong {
+			color: #0073aa;
+			font-weight: 600;
+		}
+	}
+}]]></content>
   </file>
   <file path="src/view.js">
     <description>This file contains the view function for the block which is responsible for rendering interactive behaviors of the block on the front end. Ideally using the WordPress interactivity API.</description>
@@ -1050,57 +1530,366 @@ export default function Edit( { attributes, setAttributes } ) {
 	]]></content>
   </file>
   <file path="src/render.php">
-    <description>This file contains the render callback function for the block, which is responsible for rendering the block content on the front end. A render function should exist only if the block is dynamic.</description>
     <content><![CDATA[<?php
 /**
- * @see https://github.com/WordPress/gutenberg/blob/trunk/docs/reference-guides/block-api/block-metadata.md#render
+ * Block renderer for the location hierarchy display block.
+ *
+ * This file contains the singleton renderer class and serves as the
+ * render callback for the block. It retrieves event venue information
+ * and builds the complete hierarchical location path for display.
+ *
+ * @package GatherPressVenueHierarchy
+ * @since 0.1.0
  */
 
-$venue_id = isset( $attributes['venueId'] ) ? absint( $attributes['venueId'] ) : 0;
-
-if ( ! $venue_id ) {
-	return;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
+if( ! class_exists('GatherPress_Venue_Hierarchy_Block_Renderer')) {
 
-$location_terms = wp_get_object_terms( $venue_id, 'gatherpress-location' );
-
-if ( is_wp_error( $location_terms ) || empty( $location_terms ) ) {
-	return;
-}
-
-$hierarchy_paths = array();
-
-foreach ( $location_terms as $term ) {
-	$path = array();
-	$current_term = $term;
-	
-	while ( $current_term ) {
-		array_unshift( $path, esc_html( $current_term->name ) );
+	/**
+	 * Block renderer class using Singleton pattern.
+	 *
+	 * Handles rendering of the location hierarchy display block,
+	 * retrieving event venue information and building the complete
+	 * hierarchical location path for display.
+	 *
+	 * @since 0.1.0
+	 */
+	class GatherPress_Venue_Hierarchy_Block_Renderer {
 		
-		if ( $current_term->parent ) {
-			$current_term = get_term( $current_term->parent, 'gatherpress-location' );
-			if ( is_wp_error( $current_term ) ) {
-				break;
+		/**
+		 * Single instance.
+		 *
+		 * @since 0.1.0
+		 * @var GatherPress_Venue_Hierarchy_Block_Renderer|null
+		 */
+		private static $instance = null;
+		
+		/**
+		 * Get singleton instance.
+		 *
+		 * @since 0.1.0
+		 * @return GatherPress_Venue_Hierarchy_Block_Renderer The singleton instance.
+		 */
+		public static function get_instance(): GatherPress_Venue_Hierarchy_Block_Renderer {
+			if ( null === self::$instance ) {
+				self::$instance = new self();
 			}
-		} else {
-			break;
+			return self::$instance;
+		}
+		
+		/**
+		 * Constructor.
+		 *
+		 * Private constructor to enforce singleton pattern.
+		 *
+		 * @since 0.1.0
+		 */
+		private function __construct() {}
+		
+		/**
+		 * Render block content.
+		 *
+		 * Retrieves the event's venue location hierarchy and renders
+		 * it as an inline text display with proper formatting.
+		 *
+		 * @since 0.1.0
+		 * @param array<string, mixed> $attributes Block attributes.
+		 * @param string              $content    Block content.
+		 * @param \WP_Block            $block      Block instance.
+		 * @return string Rendered block HTML.
+		 */
+		public function render( array $attributes, string $content, \WP_Block $block ): string {
+			// Get post ID from context
+			$post_id = $block->context['postId'] ?? 0;
+			
+			if ( ! $post_id ) {
+				return '';
+			}
+			
+			$post_id = absint( $post_id );
+			$post = get_post( $post_id );
+			
+			if ( ! $post ) {
+				return '';
+			}
+			
+			// Verify this is a GatherPress event
+			if ( 'gatherpress_event' !== $post->post_type ) {
+				return '';
+			}
+			
+			// Get hierarchy level attributes
+			$start_level = isset( $attributes['startLevel'] ) ? absint( $attributes['startLevel'] ) : 1;
+			$end_level = isset( $attributes['endLevel'] ) ? absint( $attributes['endLevel'] ) : 999;
+			$enable_links = isset( $attributes['enableLinks'] ) ? (bool) $attributes['enableLinks'] : false;
+			$show_venue = isset( $attributes['showVenue'] ) ? (bool) $attributes['showVenue'] : false;
+			
+			// Ensure start level is at least 1
+			$start_level = max( 1, $start_level );
+			
+			// Ensure end level is at least equal to start level
+			$end_level = max( $start_level, $end_level );
+			
+			// Get venue information if requested
+			$venue_name = '';
+			$venue_link = '';
+			
+			if ( $show_venue && class_exists( 'GatherPress\Core\Event' ) ) {
+				$event = new \GatherPress\Core\Event( $post_id );
+				$venue_info = $event->get_venue_information();
+				
+				if ( is_array( $venue_info ) ) {
+					$venue_name = $venue_info['name'] ?? '';
+					$venue_link = $venue_info['permalink'] ?? '';
+				}
+			}
+			
+			// Get location terms for this event
+			$location_terms = wp_get_object_terms(
+				$post_id,
+				'gatherpress-location',
+				array(
+					'orderby' => 'parent',
+					'order' => 'ASC',
+				)
+			);
+			
+			if ( is_wp_error( $location_terms ) ) {
+				error_log( 'GatherPress Venue Hierarchy Block: Error getting terms - ' . $location_terms->get_error_message() );
+				
+				// If showing venue and we have venue info, show just the venue
+				if ( $show_venue && $venue_name ) {
+					return $this->render_output( $venue_name, $venue_link, $enable_links );
+				}
+				
+				return '';
+			}
+			
+			if ( empty( $location_terms ) ) {
+				// If showing venue and we have venue info, show just the venue
+				if ( $show_venue && $venue_name ) {
+					return $this->render_output( $venue_name, $venue_link, $enable_links );
+				}
+				
+				return '';
+			}
+			
+			// Build hierarchy paths
+			$hierarchy_paths = $this->build_hierarchy_paths( $location_terms, $start_level, $end_level, $enable_links );
+			
+			if ( empty( $hierarchy_paths ) ) {
+				// If showing venue and we have venue info, show just the venue
+				if ( $show_venue && $venue_name ) {
+					return $this->render_output( $venue_name, $venue_link, $enable_links );
+				}
+				
+				return '';
+			}
+			
+			// Join all paths and add venue if requested
+			$hierarchy_text = implode( ', ', $hierarchy_paths );
+			
+			if ( $show_venue && $venue_name ) {
+				// Format venue name with optional link
+				if ( $enable_links && $venue_link ) {
+					$venue_text = sprintf(
+						'<a href="%s" class="gatherpress-location-link gatherpress-venue-link">%s</a>',
+						esc_url( $venue_link ),
+						esc_html( $venue_name )
+					);
+				} else {
+					$venue_text = esc_html( $venue_name );
+				}
+				
+				$hierarchy_text .= ' > ' . $venue_text;
+			}
+			
+			// Get block wrapper attributes
+			$wrapper_attributes = get_block_wrapper_attributes();
+			
+			// Return formatted output
+			return sprintf(
+				'<p %s>%s</p>',
+				$wrapper_attributes,
+				$hierarchy_text
+			);
+		}
+		
+		/**
+		 * Render output for venue-only display.
+		 *
+		 * Helper method to render just the venue when no location terms exist.
+		 *
+		 * @since 0.1.0
+		 * @param string $venue_name  Venue name to display.
+		 * @param string $venue_link  Venue permalink (optional).
+		 * @param bool   $enable_links Whether to link the venue.
+		 * @return string Rendered block HTML.
+		 */
+		private function render_output( string $venue_name, string $venue_link, bool $enable_links ): string {
+			$wrapper_attributes = get_block_wrapper_attributes();
+			
+			if ( $enable_links && $venue_link ) {
+				$venue_text = sprintf(
+					'<a href="%s" class="gatherpress-location-link gatherpress-venue-link">%s</a>',
+					esc_url( $venue_link ),
+					esc_html( $venue_name )
+				);
+			} else {
+				$venue_text = esc_html( $venue_name );
+			}
+			
+			return sprintf(
+				'<p %s>%s</p>',
+				$wrapper_attributes,
+				$venue_text
+			);
+		}
+		
+		/**
+		 * Build hierarchy paths from terms.
+		 *
+		 * Constructs complete hierarchical paths for each location term,
+		 * traversing parent relationships to build full location strings.
+		 * Only includes the deepest (most specific) term in each hierarchy branch.
+		 * Filters paths based on start and end level settings.
+		 * Optionally wraps each term in a link to its archive page.
+		 *
+		 * @since 0.1.0
+		 * @param array<\WP_Term> $terms        Array of term objects.
+		 * @param int            $start_level  Starting hierarchy level (1-based).
+		 * @param int            $end_level    Ending hierarchy level (1-based).
+		 * @param bool           $enable_links Whether to link terms to their archives.
+		 * @return array<string> Array of formatted hierarchy paths.
+		 */
+		private function build_hierarchy_paths( array $terms, int $start_level, int $end_level, bool $enable_links ): array {
+			if ( empty( $terms ) ) {
+				return array();
+			}
+			
+			// Find the deepest (leaf) terms - those that are not parents of other terms
+			$term_ids = wp_list_pluck( $terms, 'term_id' );
+			$parent_ids = wp_list_pluck( $terms, 'parent' );
+			
+			$leaf_terms = array();
+			foreach ( $terms as $term ) {
+				if ( ! $term instanceof \WP_Term ) {
+					continue;
+				}
+				
+				// A term is a leaf if its ID is not in the parent_ids array
+				if ( ! in_array( $term->term_id, $parent_ids, true ) ) {
+					$leaf_terms[] = $term;
+				}
+			}
+			
+			// If no leaf terms found, use all terms
+			if ( empty( $leaf_terms ) ) {
+				$leaf_terms = $terms;
+			}
+			
+			// Build paths for each leaf term
+			$hierarchy_paths = array();
+			foreach ( $leaf_terms as $term ) {
+				$full_path = $this->build_term_path( $term, $enable_links );
+				
+				if ( empty( $full_path ) ) {
+					continue;
+				}
+				
+				// Filter the path based on start and end levels
+				$path_length = count( $full_path );
+				
+				// Adjust levels to array indices (0-based)
+				$start_index = $start_level - 1;
+				$end_index = min( $end_level, $path_length );
+				
+				// Skip if start level is beyond the path length
+				if ( $start_index >= $path_length ) {
+					continue;
+				}
+				
+				// Extract the relevant slice of the path
+				$filtered_path = array_slice( $full_path, $start_index, $end_index - $start_index );
+				
+				if ( ! empty( $filtered_path ) ) {
+					$hierarchy_paths[] = implode( ' > ', $filtered_path );
+				}
+			}
+			
+			return $hierarchy_paths;
+		}
+		
+		/**
+		 * Build term path.
+		 *
+		 * Recursively builds the complete hierarchical path for a term
+		 * by traversing parent relationships from child to root.
+		 * Optionally wraps each term in a link to its archive page.
+		 *
+		 * @since 0.1.0
+		 * @param \WP_Term $term         Term object.
+		 * @param bool    $enable_links Whether to link terms to their archives.
+		 * @return array<string> Array of term names/links from root to leaf.
+		 */
+		private function build_term_path( \WP_Term $term, bool $enable_links ): array {
+			$path = array();
+			$current_term = $term;
+			$visited = array();
+			
+			// Prevent infinite loops
+			$max_depth = 10;
+			$depth = 0;
+			
+			while ( $current_term && $depth < $max_depth ) {
+				// Check if we've visited this term (prevent infinite loops)
+				if ( in_array( $current_term->term_id, $visited, true ) ) {
+					break;
+				}
+				
+				$visited[] = $current_term->term_id;
+				
+				// Format term name with optional link
+				if ( $enable_links ) {
+					$term_link = get_term_link( $current_term );
+					if ( ! is_wp_error( $term_link ) ) {
+						$term_text = sprintf(
+							'<a href="%s" class="gatherpress-location-link">%s</a>',
+							esc_url( $term_link ),
+							esc_html( $current_term->name )
+						);
+					} else {
+						$term_text = esc_html( $current_term->name );
+					}
+				} else {
+					$term_text = esc_html( $current_term->name );
+				}
+				
+				array_unshift( $path, $term_text );
+				
+				if ( $current_term->parent ) {
+					$parent_term = get_term( $current_term->parent, 'gatherpress-location' );
+					
+					if ( is_wp_error( $parent_term ) || ! $parent_term ) {
+						break;
+					}
+					
+					$current_term = $parent_term;
+				} else {
+					break;
+				}
+				
+				$depth++;
+			}
+			
+			return $path;
 		}
 	}
-	
-	if ( ! empty( $path ) ) {
-		$hierarchy_paths[] = implode( ' &gt; ', $path );
-	}
-}
 
-if ( empty( $hierarchy_paths ) ) {
-	return;
 }
-
-$wrapper_attributes = get_block_wrapper_attributes();
-?>
-<p <?php echo $wrapper_attributes; ?>>
-	<?php echo implode( ', ', $hierarchy_paths ); ?>
-</p>
-]]></content>
+$renderer = GatherPress_Venue_Hierarchy_Block_Renderer::get_instance();
+echo $renderer->render( $attributes, $content, $block );]]></content>
   </file>
 </artefact>

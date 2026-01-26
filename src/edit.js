@@ -35,10 +35,12 @@ function DualRangeControl( { startLevel, endLevel, maxLevel, onChange } ) {
 	const [ trackRef, setTrackRef ] = useState( null );
 	
 	const levelLabels = [
+		__( 'Continent', 'gatherpress-venue-hierarchy' ),
 		__( 'Country', 'gatherpress-venue-hierarchy' ),
 		__( 'State', 'gatherpress-venue-hierarchy' ),
 		__( 'City', 'gatherpress-venue-hierarchy' ),
 		__( 'Street', 'gatherpress-venue-hierarchy' ),
+		__( 'Number', 'gatherpress-venue-hierarchy' ),
 	];
 	
 	const getPositionFromLevel = ( level ) => {
@@ -166,7 +168,7 @@ export default function Edit( { attributes, setAttributes, context } ) {
 	const { startLevel, endLevel, enableLinks, showVenue } = attributes;
 	const [ locationHierarchy, setLocationHierarchy ] = useState( '' );
 	const [ venueName, setVenueName ] = useState( '' );
-	const [ maxDepth, setMaxDepth ] = useState( 4 );
+	const [ maxDepth, setMaxDepth ] = useState( 7 );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ error, setError ] = useState( null );
 	
@@ -262,7 +264,7 @@ export default function Edit( { attributes, setAttributes, context } ) {
 				
 				// Calculate the maximum depth
 				const calculatedMaxDepth = Math.max( ...hierarchyPaths.map( path => path.length ) );
-				setMaxDepth( Math.min( calculatedMaxDepth, 4 ) ); // Cap at 4 levels
+				setMaxDepth( Math.min( calculatedMaxDepth, 7 ) ); // Cap at 7 levels
 				
 				// Filter paths based on start and end levels
 				const filteredPaths = hierarchyPaths.map( path => {
