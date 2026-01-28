@@ -6,10 +6,10 @@
  */
 
 .wp-block-telex-block-gatherpress-venue-hierarchy {
-	padding: 1em;
-	background-color: #f7f7f7;
-	border-left: 4px solid #0073aa;
-	margin: 1em 0;
+	// padding: 1em;
+	// background-color: #f7f7f7;
+	// border-left: 4px solid #0073aa;
+	// margin: 1em 0;
 	
 	&.alignleft {
 		margin-right: 1em;
@@ -34,9 +34,8 @@
 	
 	// Link styles
 	.gatherpress-location-link {
-		color: inherit;
-		text-decoration: none;
 		transition: opacity 0.2s ease;
+		white-space: nowrap;
 		
 		&:hover {
 			opacity: 0.7;
@@ -51,6 +50,6 @@
 	
 	// Venue link with slightly different styling
 	.gatherpress-venue-link {
-		font-weight: 500;
+		// font-weight: 500;
 	}
 }

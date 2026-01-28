@@ -26,10 +26,6 @@ return array(
 				'type' => 'boolean',
 				'default' => false
 			),
-			'linkColor' => array(
-				'type' => 'string',
-				'default' => ''
-			),
 			'showVenue' => array(
 				'type' => 'boolean',
 				'default' => false
@@ -44,12 +40,48 @@ return array(
 			'postType'
 		),
 		'supports' => array(
+			'anchor' => true,
 			'html' => false,
-			'align' => true,
 			'color' => array(
+				'gradients' => true,
 				'link' => true,
-				'text' => true,
-				'background' => true
+				'__experimentalDefaultControls' => array(
+					'background' => true,
+					'text' => true,
+					'link' => true
+				)
+			),
+			'spacing' => array(
+				'margin' => true,
+				'padding' => true
+			),
+			'typography' => array(
+				'fontSize' => true,
+				'lineHeight' => true,
+				'__experimentalFontFamily' => true,
+				'__experimentalFontWeight' => true,
+				'__experimentalFontStyle' => true,
+				'__experimentalTextTransform' => true,
+				'__experimentalTextDecoration' => true,
+				'__experimentalLetterSpacing' => true,
+				'__experimentalDefaultControls' => array(
+					'fontSize' => true
+				)
+			),
+			'interactivity' => array(
+				'clientNavigation' => true
+			),
+			'__experimentalBorder' => array(
+				'radius' => true,
+				'color' => true,
+				'width' => true,
+				'style' => true,
+				'__experimentalDefaultControls' => array(
+					'radius' => true,
+					'color' => true,
+					'width' => true,
+					'style' => true
+				)
 			)
 		),
 		'textdomain' => 'gatherpress-venue-hierarchy',

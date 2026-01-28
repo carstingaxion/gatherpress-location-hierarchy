@@ -21,10 +21,6 @@
 			"type": "boolean",
 			"default": false
 		},
-		"linkColor": {
-			"type": "string",
-			"default": ""
-		},
 		"showVenue": {
 			"type": "boolean",
 			"default": false
@@ -36,12 +32,48 @@
 	},
 	"usesContext": ["postId", "postType"],
 	"supports": {
+		"anchor": true,
 		"html": false,
-		"align": true,
 		"color": {
+			"gradients": true,
 			"link": true,
-			"text": true,
-			"background": true
+			"__experimentalDefaultControls": {
+				"background": true,
+				"text": true,
+				"link": true
+			}
+		},
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true,
+			"lineHeight": true,
+			"__experimentalFontFamily": true,
+			"__experimentalFontWeight": true,
+			"__experimentalFontStyle": true,
+			"__experimentalTextTransform": true,
+			"__experimentalTextDecoration": true,
+			"__experimentalLetterSpacing": true,
+			"__experimentalDefaultControls": {
+				"fontSize": true
+			}
+		},
+		"interactivity": {
+			"clientNavigation": true
+		},
+		"__experimentalBorder": {
+			"radius": true,
+			"color": true,
+			"width": true,
+			"style": true,
+			"__experimentalDefaultControls": {
+				"radius": true,
+				"color": true,
+				"width": true,
+				"style": true
+			}
 		}
 	},
 	"textdomain": "gatherpress-venue-hierarchy",

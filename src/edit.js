@@ -16,6 +16,7 @@ import { PanelBody, ToggleControl, TextControl, Spinner } from '@wordpress/compo
 import { useState, useEffect } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
 import apiFetch from '@wordpress/api-fetch';
+import { RawHTML } from '@wordpress/element';
 
 /**
  * Lets webpack process CSS, SASS or SCSS files referenced in JavaScript files.
@@ -214,11 +215,11 @@ export default function Edit( { attributes, setAttributes, context } ) {
 		[ postId ]
 	);
 	
-	// Get venue name from _gatherpress_venue taxonomy term
-	const venueName = useSelect(
+	// Get venue name and link from _gatherpress_venue taxonomy term
+	const { venueName, venueLink } = useSelect(
 		( select ) => {
 			if ( ! postId || ! showVenue ) {
-				return '';
+				return { venueName: '', venueLink: '' };
 			}
 			
 			// Get the venue terms for this event
@@ -232,10 +233,13 @@ export default function Edit( { attributes, setAttributes, context } ) {
 			);
 			
 			if ( ! venueTerms || venueTerms.length === 0 ) {
-				return '';
+				return { venueName: '', venueLink: '' };
 			}
 			
-			return venueTerms[0]?.name || '';
+			return {
+				venueName: venueTerms[0]?.name || '',
+				venueLink: venueTerms[0]?.link || ''
+			};
 		},
 		[ postId, showVenue ]
 	);
@@ -264,7 +268,12 @@ export default function Edit( { attributes, setAttributes, context } ) {
 				// If no location terms
 				if ( ! locationTerms || locationTerms.length === 0 ) {
 					if ( showVenue && venueName ) {
-						setLocationHierarchy( venueName );
+						// Format venue with link if enabled
+						if ( enableLinks && venueLink ) {
+							setLocationHierarchy( `<a href="${ venueLink }" class="gatherpress-location-link gatherpress-venue-link">${ venueName }</a>` );
+						} else {
+							setLocationHierarchy( venueName );
+						}
 					} else {
 						setLocationHierarchy( __( 'No location hierarchy available for this event', 'gatherpress-venue-hierarchy' ) );
 					}
@@ -279,7 +288,13 @@ export default function Edit( { attributes, setAttributes, context } ) {
 					let currentTerm = term;
 					
 					while ( currentTerm ) {
-						path.unshift( currentTerm.name );
+						// For editor preview, wrap in link if enabled
+						if ( enableLinks ) {
+							const termLink = currentTerm.link || '#';
+							path.unshift( `<a href="${ termLink }" class="gatherpress-location-link">${ currentTerm.name }</a>` );
+						} else {
+							path.unshift( currentTerm.name );
+						}
 						
 						if ( currentTerm.parent && currentTerm.parent !== 0 ) {
 							currentTerm = allTerms.find( t => t.id === currentTerm.parent );
@@ -319,14 +334,24 @@ export default function Edit( { attributes, setAttributes, context } ) {
 					
 					// Add venue name if requested and available
 					if ( showVenue && venueName ) {
-						hierarchyText += separator + venueName;
+						// Format venue with link if enabled
+						if ( enableLinks && venueLink ) {
+							hierarchyText += separator + `<a href="${ venueLink }" class="gatherpress-location-link gatherpress-venue-link">${ venueName }</a>`;
+						} else {
+							hierarchyText += separator + venueName;
+						}
 					}
 					
 					setLocationHierarchy( hierarchyText );
 				} else {
 					// If no filtered paths but venue is requested, show just venue
 					if ( showVenue && venueName ) {
-						setLocationHierarchy( venueName );
+						// Format venue with link if enabled
+						if ( enableLinks && venueLink ) {
+							setLocationHierarchy( `<a href="${ venueLink }" class="gatherpress-location-link gatherpress-venue-link">${ venueName }</a>` );
+						} else {
+							setLocationHierarchy( venueName );
+						}
 					} else {
 						setLocationHierarchy( __( 'No location hierarchy available at selected levels', 'gatherpress-venue-hierarchy' ) );
 					}
@@ -337,7 +362,12 @@ export default function Edit( { attributes, setAttributes, context } ) {
 				
 				// Even on error, try to show venue if requested
 				if ( showVenue && venueName ) {
-					setLocationHierarchy( venueName );
+					// Format venue with link if enabled
+					if ( enableLinks && venueLink ) {
+						setLocationHierarchy( `<a href="${ venueLink }" class="gatherpress-location-link gatherpress-venue-link">${ venueName }</a>` );
+					} else {
+						setLocationHierarchy( venueName );
+					}
 				} else {
 					setLocationHierarchy( __( 'Error loading location hierarchy', 'gatherpress-venue-hierarchy' ) );
 				}
@@ -346,7 +376,7 @@ export default function Edit( { attributes, setAttributes, context } ) {
 		};
 		
 		buildHierarchy();
-	}, [ postId, locationTerms, startLevel, endLevel, showVenue, venueName, separator ] );
+	}, [ postId, locationTerms, startLevel, endLevel, showVenue, venueName, venueLink, separator, enableLinks ] );
 	
 	return (
 		<>
@@ -392,7 +422,13 @@ export default function Edit( { attributes, setAttributes, context } ) {
 				</PanelBody>
 			</InspectorControls>
 			<p { ...useBlockProps() }>
-				{ isLoading ? <Spinner /> : locationHierarchy }
+				{ isLoading ? (
+					<Spinner />
+				) : enableLinks ? (
+					<RawHTML>{ locationHierarchy }</RawHTML>
+				) : (
+					locationHierarchy
+				) }
 			</p>
 		</>
 	);

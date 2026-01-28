@@ -8,7 +8,7 @@
   \************************/
 (module) {
 
-module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"telex/block-gatherpress-venue-hierarchy","version":"0.1.0","title":"Location Hierarchy Display","category":"widgets","icon":"location","description":"Displays the complete location hierarchy as inline text","example":{},"attributes":{"startLevel":{"type":"number","default":1},"endLevel":{"type":"number","default":999},"enableLinks":{"type":"boolean","default":false},"linkColor":{"type":"string","default":""},"showVenue":{"type":"boolean","default":false},"separator":{"type":"string","default":" > "}},"usesContext":["postId","postType"],"supports":{"html":false,"align":true,"color":{"link":true,"text":true,"background":true}},"textdomain":"gatherpress-venue-hierarchy","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","render":"file:./render.php"}');
+module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"telex/block-gatherpress-venue-hierarchy","version":"0.1.0","title":"Location Hierarchy Display","category":"widgets","icon":"location","description":"Displays the complete location hierarchy as inline text","example":{},"attributes":{"startLevel":{"type":"number","default":1},"endLevel":{"type":"number","default":999},"enableLinks":{"type":"boolean","default":false},"showVenue":{"type":"boolean","default":false},"separator":{"type":"string","default":" > "}},"usesContext":["postId","postType"],"supports":{"anchor":true,"html":false,"color":{"gradients":true,"link":true,"__experimentalDefaultControls":{"background":true,"text":true,"link":true}},"spacing":{"margin":true,"padding":true},"typography":{"fontSize":true,"lineHeight":true,"__experimentalFontFamily":true,"__experimentalFontWeight":true,"__experimentalFontStyle":true,"__experimentalTextTransform":true,"__experimentalTextDecoration":true,"__experimentalLetterSpacing":true,"__experimentalDefaultControls":{"fontSize":true}},"interactivity":{"clientNavigation":true},"__experimentalBorder":{"radius":true,"color":true,"width":true,"style":true,"__experimentalDefaultControls":{"radius":true,"color":true,"width":true,"style":true}}},"textdomain":"gatherpress-venue-hierarchy","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","render":"file:./render.php"}');
 
 /***/ },
 
@@ -50,6 +50,7 @@ __webpack_require__.r(__webpack_exports__);
  *
  * @see https://developer.wordpress.org/block-editor/reference-guides/packages/packages-block-editor/#useblockprops
  */
+
 
 
 
@@ -233,10 +234,16 @@ function Edit({
     }) || [];
   }, [postId]);
 
-  // Get venue name from _gatherpress_venue taxonomy term
-  const venueName = (0,_wordpress_data__WEBPACK_IMPORTED_MODULE_4__.useSelect)(select => {
+  // Get venue name and link from _gatherpress_venue taxonomy term
+  const {
+    venueName,
+    venueLink
+  } = (0,_wordpress_data__WEBPACK_IMPORTED_MODULE_4__.useSelect)(select => {
     if (!postId || !showVenue) {
-      return '';
+      return {
+        venueName: '',
+        venueLink: ''
+      };
     }
 
     // Get the venue terms for this event
@@ -245,9 +252,15 @@ function Edit({
       per_page: 1
     });
     if (!venueTerms || venueTerms.length === 0) {
-      return '';
+      return {
+        venueName: '',
+        venueLink: ''
+      };
     }
-    return venueTerms[0]?.name || '';
+    return {
+      venueName: venueTerms[0]?.name || '',
+      venueLink: venueTerms[0]?.link || ''
+    };
   }, [postId, showVenue]);
 
   // Check if we're in a GatherPress event context
@@ -272,7 +285,12 @@ function Edit({
         // If no location terms
         if (!locationTerms || locationTerms.length === 0) {
           if (showVenue && venueName) {
-            setLocationHierarchy(venueName);
+            // Format venue with link if enabled
+            if (enableLinks && venueLink) {
+              setLocationHierarchy(`<a href="${venueLink}" class="gatherpress-location-link gatherpress-venue-link">${venueName}</a>`);
+            } else {
+              setLocationHierarchy(venueName);
+            }
           } else {
             setLocationHierarchy((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)('No location hierarchy available for this event', 'gatherpress-venue-hierarchy'));
           }
@@ -284,7 +302,13 @@ function Edit({
           const path = [];
           let currentTerm = term;
           while (currentTerm) {
-            path.unshift(currentTerm.name);
+            // For editor preview, wrap in link if enabled
+            if (enableLinks) {
+              const termLink = currentTerm.link || '#';
+              path.unshift(`<a href="${termLink}" class="gatherpress-location-link">${currentTerm.name}</a>`);
+            } else {
+              path.unshift(currentTerm.name);
+            }
             if (currentTerm.parent && currentTerm.parent !== 0) {
               currentTerm = allTerms.find(t => t.id === currentTerm.parent);
             } else {
@@ -318,13 +342,23 @@ function Edit({
 
           // Add venue name if requested and available
           if (showVenue && venueName) {
-            hierarchyText += separator + venueName;
+            // Format venue with link if enabled
+            if (enableLinks && venueLink) {
+              hierarchyText += separator + `<a href="${venueLink}" class="gatherpress-location-link gatherpress-venue-link">${venueName}</a>`;
+            } else {
+              hierarchyText += separator + venueName;
+            }
           }
           setLocationHierarchy(hierarchyText);
         } else {
           // If no filtered paths but venue is requested, show just venue
           if (showVenue && venueName) {
-            setLocationHierarchy(venueName);
+            // Format venue with link if enabled
+            if (enableLinks && venueLink) {
+              setLocationHierarchy(`<a href="${venueLink}" class="gatherpress-location-link gatherpress-venue-link">${venueName}</a>`);
+            } else {
+              setLocationHierarchy(venueName);
+            }
           } else {
             setLocationHierarchy((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)('No location hierarchy available at selected levels', 'gatherpress-venue-hierarchy'));
           }
@@ -335,7 +369,12 @@ function Edit({
 
         // Even on error, try to show venue if requested
         if (showVenue && venueName) {
-          setLocationHierarchy(venueName);
+          // Format venue with link if enabled
+          if (enableLinks && venueLink) {
+            setLocationHierarchy(`<a href="${venueLink}" class="gatherpress-location-link gatherpress-venue-link">${venueName}</a>`);
+          } else {
+            setLocationHierarchy(venueName);
+          }
         } else {
           setLocationHierarchy((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)('Error loading location hierarchy', 'gatherpress-venue-hierarchy'));
         }
@@ -343,7 +382,7 @@ function Edit({
       }
     };
     buildHierarchy();
-  }, [postId, locationTerms, startLevel, endLevel, showVenue, venueName, separator]);
+  }, [postId, locationTerms, startLevel, endLevel, showVenue, venueName, venueLink, separator, enableLinks]);
   return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsxs)(react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.Fragment, {
     children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsxs)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.InspectorControls, {
       children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
@@ -391,7 +430,9 @@ function Edit({
       })]
     }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsx)("p", {
       ...(0,_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.useBlockProps)(),
-      children: isLoading ? /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.Spinner, {}) : locationHierarchy
+      children: isLoading ? /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.Spinner, {}) : enableLinks ? /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_7__.jsx)(_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.RawHTML, {
+        children: locationHierarchy
+      }) : locationHierarchy
     })]
   });
 }

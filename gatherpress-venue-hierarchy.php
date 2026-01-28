@@ -6,7 +6,7 @@
  * Version:           0.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
- * Author:            carstenbach
+ * Author:            WordPress Telex
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       gatherpress-venue-hierarchy
@@ -150,10 +150,6 @@ class GatherPress_Venue_Hierarchy {
 	 * @return void
 	 */
 	public function register_location_taxonomy(): void {
-		$settings     = \GatherPress\Core\Settings::get_instance();
-		$events_slug = $settings->get_value( 'general', 'urls', 'events' );
-
-
 		$labels = array(
 			'name'                       => __( 'Locations', 'gatherpress-venue-hierarchy' ),
 			'singular_name'              => __( 'Location', 'gatherpress-venue-hierarchy' ),
@@ -181,8 +177,7 @@ class GatherPress_Venue_Hierarchy {
 			'show_tagcloud'              => true,
 			'show_in_rest'               => true,
 			'rewrite'                    => array(
-				// 'slug' => 'location',
-				'slug' => $events_slug . '/in',
+				'slug' => 'location',
 				'hierarchical' => true,
 			),
 			'sort'                       => true,
@@ -557,6 +552,7 @@ class GatherPress_Venue_Hierarchy {
  * - Maps country codes to translated continent names using WordPress i18n
  * - Handles regional variations (e.g., "state" vs "region" vs "province")
  * - Extracts street and house_number for complete address hierarchy
+ * - Sends site language to API for localized results
  *
  * @since 0.1.0
  */
@@ -715,6 +711,7 @@ class GatherPress_Venue_Geocoder {
 	 *
 	 * **Why:** Need structured location data (continent, country, state, city, street, street_number)
 	 * to build the taxonomy hierarchy. Caching prevents hitting API rate limits and improves performance.
+	 * Site language is sent to API to get localized place names.
 	 *
 	 * **How:**
 	 * 1. Sanitizes input address
@@ -725,6 +722,7 @@ class GatherPress_Venue_Geocoder {
 	 *    - format: json (structured response)
 	 *    - addressdetails: 1 (include address components)
 	 *    - limit: 1 (only need best match)
+	 *    - accept-language: WordPress site language (for localized results)
 	 * 5. Parses response via parse_location_data()
 	 * 6. Caches successful result
 	 * 7. Returns location array or false on failure
@@ -765,6 +763,11 @@ class GatherPress_Venue_Geocoder {
 			return $cached;
 		}
 		
+		// Get WordPress site language in format that Nominatim accepts (e.g., 'de', 'en', 'fr')
+		$site_locale = get_locale();
+		// Convert locale like 'de_DE' to language code 'de'
+		$language = explode( '_', $site_locale )[0];
+		
 		$response = wp_remote_get(
 			add_query_arg(
 				array(
@@ -772,6 +775,9 @@ class GatherPress_Venue_Geocoder {
 					'format' => 'json',
 					'addressdetails' => '1',
 					'limit' => '1',
+					'accept-language' => $language,
+					// 'polygon_geojson' => 1,
+					'email' => get_bloginfo( 'admin_email' ), // Nominatim requires an email for identification
 				),
 				$this->api_endpoint
 			),
@@ -871,7 +877,7 @@ class GatherPress_Venue_Geocoder {
 		
 		$location = array(
 			'continent' => $continent,
-			'country' => $this->sanitize_term_name( $address['country'] ?? '' ),
+			'country' => sanitize_text_field( $address['country'] ?? '' ),
 			'country_code' => $country_code,
 			'state' => '',
 			'city' => '',
@@ -883,51 +889,28 @@ class GatherPress_Venue_Geocoder {
 		$is_german_region = in_array( $country_code, $german_regions, true );
 		
 		if ( $is_german_region ) {
-			$location['state'] = $this->sanitize_term_name( $address['state'] ?? '' );
+			$location['state'] = sanitize_text_field( $address['state'] ?? '' );
 		} else {
-			$location['state'] = $this->sanitize_term_name( 
+			$location['state'] = sanitize_text_field( 
 				$address['state'] ?? $address['region'] ?? $address['province'] ?? '' 
 			);
 		}
 		
-		$location['city'] = $this->sanitize_term_name(
+		$location['city'] = sanitize_text_field(
 			$address['city'] ?? $address['town'] ?? $address['village'] ?? $address['county'] ?? ''
 		);
 		
 		// Extract street name (road is most common, but also check street and pedestrian)
-		$location['street'] = $this->sanitize_term_name(
+		$location['street'] = sanitize_text_field(
 			$address['road'] ?? $address['street'] ?? $address['pedestrian'] ?? ''
 		);
 		
 		// Extract house/street number
-		$location['street_number'] = $this->sanitize_term_name(
+		$location['street_number'] = sanitize_text_field(
 			$address['house_number'] ?? ''
 		);
 		
 		return array_filter( $location );
-	}
-	
-	/**
-	 * Sanitize term name.
-	 *
-	 * **What:** Cleans location name for safe use as taxonomy term.
-	 *
-	 * **Why:** Term names are displayed in UI and used in URLs - must be safe from XSS
-	 * and properly formatted. sanitize_text_field() strips HTML/PHP tags and normalizes whitespace.
-	 *
-	 * **How:** Applies WordPress core sanitize_text_field() which:
-	 * - Strips all HTML and PHP tags
-	 * - Removes line breaks
-	 * - Trims whitespace from ends
-	 * - Encodes special characters
-	 * Then applies trim() for additional whitespace cleanup.
-	 *
-	 * @since 0.1.0
-	 * @param string $name Raw term name from API.
-	 * @return string Sanitized term name safe for database and display.
-	 */
-	private function sanitize_term_name( string $name ): string {
-		return trim( sanitize_text_field( $name ) );
 	}
 }
 
@@ -947,6 +930,7 @@ class GatherPress_Venue_Geocoder {
  * - Checks for existing terms before creating (prevents duplicates)
  * - Updates parent relationships if term exists with wrong parent
  * - Associates all created terms with the event post
+ * - Uses sanitize_title() for proper slug generation (handles ß, accents, etc.)
  *
  * @since 0.1.0
  */
@@ -1004,7 +988,7 @@ class GatherPress_Venue_Hierarchy_Builder {
 	 *    - Street Number (parent: street_term_id)
 	 * 2. Each step uses get_or_create_term() which:
 	 *    - Checks if term exists by name
-	 *    - Creates if missing
+	 *    - Creates if missing with proper slug generation
 	 *    - Updates parent if wrong
 	 *    - Returns term_id for next level
 	 * 3. Collects all valid term IDs (filters out 0s from failures)
@@ -1036,29 +1020,31 @@ class GatherPress_Venue_Hierarchy_Builder {
 		$city_term_id = 0;
 		$street_term_id = 0;
 		$street_number_term_id = 0;
+
+		$locale =  ! empty( $location['country_code'] ) ? $location['country_code'] : '';
 		
 		if ( ! empty( $location['continent'] ) ) {
-			$continent_term_id = $this->get_or_create_term( $location['continent'], 0, $taxonomy );
+			$continent_term_id = $this->get_or_create_term( $location['continent'], 0, $taxonomy, $locale );
 		}
 		
 		if ( ! empty( $location['country'] ) && $continent_term_id ) {
-			$country_term_id = $this->get_or_create_term( $location['country'], $continent_term_id, $taxonomy );
+			$country_term_id = $this->get_or_create_term( $location['country'], $continent_term_id, $taxonomy, $locale );
 		}
 		
 		if ( ! empty( $location['state'] ) && $country_term_id ) {
-			$state_term_id = $this->get_or_create_term( $location['state'], $country_term_id, $taxonomy );
+			$state_term_id = $this->get_or_create_term( $location['state'], $country_term_id, $taxonomy, $locale );
 		}
 		
 		if ( ! empty( $location['city'] ) && $state_term_id ) {
-			$city_term_id = $this->get_or_create_term( $location['city'], $state_term_id, $taxonomy );
+			$city_term_id = $this->get_or_create_term( $location['city'], $state_term_id, $taxonomy, $locale );
 		}
 		
 		if ( ! empty( $location['street'] ) && $city_term_id ) {
-			$street_term_id = $this->get_or_create_term( $location['street'], $city_term_id, $taxonomy );
+			$street_term_id = $this->get_or_create_term( $location['street'], $city_term_id, $taxonomy, $locale );
 		}
 		
 		if ( ! empty( $location['street_number'] ) && $street_term_id ) {
-			$street_number_term_id = $this->get_or_create_term( $location['street_number'], $street_term_id, $taxonomy );
+			$street_number_term_id = $this->get_or_create_term( $location['street_number'], $street_term_id, $taxonomy, $locale );
 		}
 		
 		$term_ids = array_filter( array( $continent_term_id, $country_term_id, $state_term_id, $city_term_id, $street_term_id, $street_number_term_id ) );
@@ -1071,36 +1057,44 @@ class GatherPress_Venue_Hierarchy_Builder {
 	/**
 	 * Get or create term.
 	 *
-	 * **What:** Retrieves existing term or creates new one with proper parent relationship.
+	 * **What:** Retrieves existing term or creates new one with proper parent relationship and slug.
 	 *
 	 * **Why:** Prevents duplicate terms and ensures consistent hierarchy. If a term exists
 	 * but has the wrong parent (e.g., from manual creation), it fixes the relationship.
-	 * This maintains data integrity when terms are created out of order or manually.
+	 * Uses sanitize_title() for proper slug generation, ensuring special characters like
+	 * German ß become "ss" and French accents are properly converted (e.g., é → e).
 	 *
 	 * **How:**
-	 * 1. Sanitizes term name (security + consistency)
-	 * 2. Checks if term exists using get_term_by('name', ...)
-	 *    - Looks up by exact name match in specified taxonomy
-	 * 3. If term exists:
+	 * 1. Sanitizes term name for display (security + consistency)
+	 * 2. Generates proper slug using sanitize_title() (handles ß → ss, accents, etc.)
+	 * 3. Checks if term exists using get_term_by('slug', ...)
+	 *    - Looks up by slug (not name) to handle transliteration consistently
+	 * 4. If term exists:
 	 *    - Validates it's a WP_Term object
 	 *    - Checks if parent matches expected parent_id
 	 *    - Updates parent via wp_update_term() if mismatch
 	 *    - Returns existing term_id
-	 * 4. If term doesn't exist:
-	 *    - Creates via wp_insert_term() with parent
+	 * 5. If term doesn't exist:
+	 *    - Creates via wp_insert_term() with parent and explicit slug
 	 *    - Handles errors (logs to error_log)
 	 *    - Returns new term_id or 0 on failure
 	 *
 	 * Example scenarios:
-	 * Scenario 1 - Create new:
-	 *   Input: name="Bavaria", parent_id=101 (Germany), taxonomy="gatherpress-location"
+	 * Scenario 1 - Create new with special chars:
+	 *   Input: name="Große Straße", parent_id=101, taxonomy="gatherpress-location"
+	 *   Slug: "grosse-strasse" (ß → ss)
 	 *   Result: Creates term, returns ID 102
 	 *
-	 * Scenario 2 - Use existing:
+	 * Scenario 2 - Create with French accents:
+	 *   Input: name="Café René", parent_id=101
+	 *   Slug: "cafe-rene" (é → e)
+	 *   Result: Creates term, returns ID 103
+	 *
+	 * Scenario 3 - Use existing:
 	 *   Input: name="Bavaria", parent_id=101, term already exists with correct parent
 	 *   Result: Returns existing ID 102
 	 *
-	 * Scenario 3 - Fix parent:
+	 * Scenario 4 - Fix parent:
 	 *   Input: name="Bavaria", parent_id=101, term exists with parent_id=0
 	 *   Result: Updates parent to 101, returns ID 102
 	 *
@@ -1108,12 +1102,23 @@ class GatherPress_Venue_Hierarchy_Builder {
 	 * @param string $name      Term name to find or create.
 	 * @param int    $parent_id Parent term ID (0 for root level).
 	 * @param string $taxonomy  Taxonomy name.
+	 * @param string $locale    Country code of the retrieved address.
 	 * @return int Term ID on success, 0 on failure.
 	 */
-	private function get_or_create_term( string $name, int $parent_id, string $taxonomy ): int {
+	private function get_or_create_term( string $name, int $parent_id, string $taxonomy, string $locale = '' ): int {
 		$name = sanitize_text_field( $name );
+		// Generate proper slug using sanitize_title() which handles:
+		// - German characters: ß → ss, ä → a, ö → o, ü → u
+		// - French accents: é → e, è → e, ê → e, à → a, etc.
+		// - Special characters: spaces → hyphens, removes unsafe chars
 		
-		$existing_term = get_term_by( 'name', $name, $taxonomy );
+		// sanitize_title uses the sites locale to decide HOW to remove accents,
+		// to stay consistent across different languages we use remove_accents directly.
+		$slug = remove_accents( $name, $locale );
+		$slug = sanitize_title( $slug );
+		
+		// Check by slug (not name) to handle transliteration consistently
+		$existing_term = get_term_by( 'slug', $slug, $taxonomy );
 		
 		if ( $existing_term instanceof \WP_Term ) {
 			if ( $existing_term->parent !== $parent_id ) {
@@ -1126,10 +1131,14 @@ class GatherPress_Venue_Hierarchy_Builder {
 			return $existing_term->term_id;
 		}
 		
+		// Create term with explicit slug to ensure proper transliteration
 		$term = wp_insert_term(
 			$name,
 			$taxonomy,
-			array( 'parent' => $parent_id )
+			array(
+				'parent' => $parent_id,
+				'slug' => $slug,
+			)
 		);
 		
 		if ( is_wp_error( $term ) ) {

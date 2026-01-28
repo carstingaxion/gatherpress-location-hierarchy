@@ -11,6 +11,7 @@
 /* Dual Range Control Styles */
 .dual-range-control {
 	padding: 16px 0;
+	overflow: hidden;
 	
 	&__labels {
 		display: grid;
@@ -20,6 +21,8 @@
 		padding: 0 8px;
 		position: relative;
 		min-height: 48px; // Space for two rows of labels
+		margin-left: -14%;
+    	margin-right: -14%;
 	}
 	
 	&__label {
@@ -34,7 +37,9 @@
 		hyphens: auto;
 		position: absolute;
 		width: calc(100% / 7 - 4px);
-		
+		white-space: nowrap;
+		padding: .5rem;
+		outline: 1px dashed magenta;
 		// Stagger labels: odd indices (1,3,5) on top, even indices (0,2,4,6) on bottom
 		&:nth-child(odd) {
 			top: 0;
