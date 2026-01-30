@@ -77,7 +77,7 @@ function gatherpress_location_hierarchy_activate(): void {
 		require_once GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . '/includes/classes/class-builder.php';
 		require_once GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . '/includes/classes/class-geocoder.php';
 	}
-	$plugin = \Setup::get_instance();
+	$plugin = \GatherPress_Location_Hierarchy\Setup::get_instance();
 	$plugin->register_location_taxonomy(); // Ensure taxonomy is registered before processing events
 
 	// Clear the permalinks to add our post type's rules to the database.
