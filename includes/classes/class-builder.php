@@ -316,18 +316,19 @@ class Builder {
 		 * ```
 		 * 
 		 * The Term arguments, that are not well-parseable by extract-wp-hooks. (https://github.com/akirk/extract-wp-hooks/issues/23)
-		 * ```
-		 *     @ type string                $name      Term name.
-		 *     @ type string                $slug      Term slug.
-		 *     @ type int                   $parent    Parent term ID.
-		 *     @ type string                $taxonomy  Taxonomy name.
-		 *     @ type int                   $level     Hierarchy level (1-6).
-		 *     @ type array<string, string> $location  Full location data array.
-		 * ```
 		 *
 		 * @since 0.1.0
 		 *
-		 * @param array $args Term arguments array.
+		 * @param array $args {
+		 *     Term arguments array.
+		 * 
+		 *     @type string                $name      Term name.
+		 *     @type string                $slug      Term slug.
+		 *     @type int                   $parent    Parent term ID.
+		 *     @type string                $taxonomy  Taxonomy name.
+		 *     @type int                   $level     Hierarchy level (1-6).
+		 *     @type array<string, string> $location  Full location data array.
+		 * }
 		 */
 		$term_args = apply_filters(
 			'gatherpress_location_hierarchy_term_args',

@@ -12,6 +12,11 @@ as slugs instead of transliterated country names.
 Passes array of term data including name, slug, parent, level,
 and full location context. Filters can modify any attribute except taxonomy.
 
+
+Term arguments array.
+
+}
+
 ## Example
 
 ```php
@@ -25,22 +30,14 @@ add_filter( 'gatherpress_location_hierarchy_term_args', function( $args ) {
 ```
 
 The Term arguments, that are not well-parseable by extract-wp-hooks. (https://github.com/akirk/extract-wp-hooks/issues/23)
-```
-    @ type string                $name      Term name.
-    @ type string                $slug      Term slug.
-    @ type int                   $parent    Parent term ID.
-    @ type string                $taxonomy  Taxonomy name.
-    @ type int                   $level     Hierarchy level (1-6).
-    @ type array<string, string> $location  Full location data array.
-```
 
 ## Parameters
 
-- *`array`* `$args` Term arguments array.
+- *`array`* `$args` {
 
 ## Files
 
-- [includes/classes/class-builder.php:332](https://github.com/carstingaxion/gatherpress-location-hierarchy/blob/main/includes/classes/class-builder.php#L332)
+- [includes/classes/class-builder.php:333](https://github.com/carstingaxion/gatherpress-location-hierarchy/blob/main/includes/classes/class-builder.php#L333)
 ```php
 apply_filters(
 			'gatherpress_location_hierarchy_term_args',
