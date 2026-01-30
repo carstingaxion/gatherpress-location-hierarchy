@@ -72,6 +72,11 @@ add_action( 'plugins_loaded', 'gatherpress_location_hierarchy_setup' );
  * @return void
  */
 function gatherpress_location_hierarchy_activate(): void {
+	if ( ! class_exists( '\GatherPress_Location_Hierarchy\Setup' ) ) {
+		require_once GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . '/includes/classes/class-setup.php';
+		require_once GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . '/includes/classes/class-builder.php';
+		require_once GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . '/includes/classes/class-geocoder.php';
+	}
 	$plugin = \Setup::get_instance();
 	$plugin->register_location_taxonomy(); // Ensure taxonomy is registered before processing events
 

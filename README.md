@@ -85,7 +85,6 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
   - 4 = City
   - 5 = Street
   - 6 = Street Number
-* Filter data passed to block editor via wp_localize_script()
 
 ### Display Block Features
 
@@ -93,15 +92,10 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
 
 * Dual-handle range control for selecting start and end levels
 * 6 levels available: Continent, Country, State, City, Street, Number
-* Staggered label layout (alternating top/bottom rows) for readability
-* Real-time preview of selected range
-* Respects configured allowed level range from filter
-* Adjusts control bounds dynamically based on filter settings
 
 **Display Options:**
 
 * Customizable separator between terms (default: " > ")
-* Preserves whitespace in separator (uses wp_kses_post, not sanitize_text_field)
 * Optional term links to taxonomy archive pages
 * Optional venue display at end of hierarchy
 * Venue links to GatherPress venue post when enabled
@@ -112,18 +106,7 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
 
 * Works inside single event posts
 * Works inside query loops querying for events
-* Uses useSelect hook for reactive term and venue data
-* Automatically updates when event is saved
-* Shows placeholder text in query loop contexts when no terms available
 
-**Implementation Details:**
-
-* Editor: Uses useSelect hook to query location terms and venue taxonomy
-* Frontend: Singleton renderer class (Block_Renderer)
-* Term retrieval: Ordered by parent relationship to maintain hierarchy
-* Path building: Identifies leaf terms (deepest in hierarchy), builds paths by traversing parents
-* Level filtering: Uses array_slice on complete paths based on startLevel/endLevel
-* Accounts for allowed level range offset when filtering paths
 
 ### Use Cases
 
@@ -152,7 +135,6 @@ Sites can configure which levels to use (e.g., country to city only) via WordPre
 1. Upload plugin files to `/wp-content/plugins/gatherpress-location-hierarchy/`
 2. Activate the plugin through the WordPress Plugins menu
 3. Plugin registers taxonomy and block automatically on activation
-4. Taxonomy is registered at priority 5 (early) to prevent rewrite rule conflicts
 
 ### Configuration
 
@@ -213,7 +195,7 @@ All regions returned by Nominatim are supported. Enhanced handling for German-sp
 
 ### How does this relate to GatherPress venues?
 
-This plugin creates a separate "gatherpress-location" taxonomy. GatherPress's venue system (venue post type and `_gatherpress_venue` taxonomy) remains unchanged. The location taxonomy provides geographic organization while GatherPress manages venue details (address, phone, website).
+This plugin creates a separate `gatherpress_location` taxonomy. GatherPress's venue system (venue post type and `_gatherpress_venue` taxonomy) remains unchanged. The location taxonomy provides geographic organization while GatherPress manages venue details (address, phone, website).
 
 ### How do I query events by location?
 
@@ -297,191 +279,9 @@ The filter restricts which levels are processed:
 
 ## Changelog
 
-### 0.1.0
-* Initial release
-* Hierarchical gatherpress_location taxonomy (6 levels)
-* Nominatim API integration with 1-hour caching and site language support
-* Automatic term creation with parent relationships
-* Country-to-continent mapping with WordPress i18n
-* Gutenberg block with dual-range level control
-* Customizable separator between terms with whitespace preservation
-* Optional term links to archive pages
-* Optional venue display with link support
-* Enhanced German-speaking region support
-* City-state handling (e.g., Berlin) with suburb fallback
-* Street and street number handling
-* Combined street+number display option
-* Staggered label layout for 6-level range control
-* REST API integration
-* PHPStan-compatible type hints
-* Comprehensive docblocks with What/Why/How explanations
-* Singleton pattern implementation
-* Proper slug generation with sanitize_title() and remove_accents()
-* Hierarchy level filtering via WordPress filter
-* Term attribute customization filter
-* Country codes as term slugs
-* Canonical URL handling for taxonomy archives with single child
-* Context-aware block (works in query loops)
-* Automatic editor updates when event saved
+All notable changes to this project will be documented in the [CHANGELOG.md](CHANGELOG.md).
 
-## Developer Documentation
 
-### Data Structure
-
-**Taxonomy:**
-* Name: gatherpress_location
-* Hierarchical: true
-* Post types: gatherpress_event
-* REST API: enabled
-* URL structure: /events/in/{term}/{child-term}/
-* Rewrite: hierarchical (pretty URLs)
-* Admin column: visible
-* Default ordering: by parent (maintains hierarchy)
-
-**Location Data Array:**
-```php
-array(
-    'continent'      => string, // e.g., "Europe" (translated)
-    'country'        => string, // e.g., "Germany"
-    'country_code'   => string, // e.g., "de" (lowercase)
-    'state'          => string, // e.g., "Bavaria" (or city name for city-states)
-    'city'           => string, // e.g., "Munich" (or suburb for city-states)
-    'street'         => string, // e.g., "Marienplatz"
-    'street_number'  => string, // e.g., "1"
-)
-```
-
-### Class Architecture
-
-**Setup** (Singleton)
-* Registers taxonomy and block
-* Hooks into save_post_gatherpress_event (priority 20)
-* Manages settings page
-* Coordinates geocoding and hierarchy building
-* Provides get_allowed_levels() method
-* Localizes filter data to block editor
-* Adds canonical URLs for single-child terms
-
-**Geocoder** (Singleton)
-* Handles Nominatim API communication
-* Manages transient caching (1-hour duration)
-* Parses API responses
-* Maps countries to continents using WordPress i18n
-* Sends site language to API for localized results
-* Handles German-speaking regions specially
-* Handles city-states (Berlin) with suburb fallback
-
-**Builder** (Singleton)
-* Creates taxonomy terms
-* Establishes parent-child relationships
-* Updates incorrect parent assignments
-* Associates terms with events
-* Uses sanitize_title() for proper slug generation
-* Checks allowed levels before creating terms
-* Applies filter before term insertion
-* Uses country codes as slugs for countries
-
-**Block_Renderer** (Singleton)
-* Renders block on frontend
-* Retrieves location terms
-* Builds hierarchical paths
-* Formats output with optional links
-* Preserves whitespace in separator
-* Accounts for allowed level range offset
-* Validates post context (must be gatherpress_event)
-
-### Code Examples
-
-**Get all location terms for an event:**
-```php
-$terms = wp_get_object_terms(
-    $event_id,
-    'gatherpress_location',
-    array( 'orderby' => 'parent', 'order' => 'ASC' )
-);
-```
-
-**Query events in a specific country:**
-```php
-$events = new WP_Query( array(
-    'post_type' => 'gatherpress_event',
-    'tax_query' => array(
-        array(
-            'taxonomy' => 'gatherpress_location',
-            'field'    => 'slug',
-            'terms'    => 'de', // Country code as slug
-        ),
-    ),
-) );
-```
-
-**Get hierarchical term path:**
-```php
-$term = get_term_by( 'slug', 'munich', 'gatherpress_location' );
-$path = array();
-$current = $term;
-while ( $current ) {
-    array_unshift( $path, $current->name );
-    $current = $current->parent ? get_term( $current->parent ) : null;
-}
-// Result: ['Europe', 'Germany', 'Bavaria', 'Munich']
-```
-
-**Configure hierarchy levels:**
-```php
-add_filter( 'gatherpress_location_hierarchy_levels', function() {
-    return [2, 4]; // Country, State, City only
-} );
-```
-
-**Customize term attributes:**
-```php
-add_filter( 'gatherpress_location_hierarchy_term_args', function( $args ) {
-    // Example: Add custom meta or modify name
-    if ( 2 === $args['level'] ) { // Country level
-        // Country already uses country_code as slug by default
-        $args['slug'] = $args['location']['country_code'];
-    }
-    return $args;
-} );
-```
-
-**Query events by multiple locations:**
-```php
-$events = new WP_Query( array(
-    'post_type' => 'gatherpress_event',
-    'tax_query' => array(
-        'relation' => 'OR',
-        array(
-            'taxonomy' => 'gatherpress_location',
-            'field'    => 'slug',
-            'terms'    => 'bavaria',
-        ),
-        array(
-            'taxonomy' => 'gatherpress_location',
-            'field'    => 'slug',
-            'terms'    => 'saxony',
-        ),
-    ),
-) );
-```
-
-### Hooks and Filters
-
-**Actions:**
-* `save_post_gatherpress_event` (priority 20) - Triggers geocoding
-* `enqueue_block_editor_assets` - Localizes filter data
-* `wp_head` (priority 1) - Adds canonical links
-
-**Filters:**
-* `gatherpress_location_hierarchy_levels` - Configure allowed levels
-  - Default: [1, 6]
-  - Return: [min_level, max_level]
-  - Example: [2, 4] for Country to City
-* `gatherpress_location_hierarchy_term_args` - Customize term attributes
-  - Receives: ['name', 'slug', 'parent', 'taxonomy', 'level', 'location']
-  - Return: Modified args array
-  - Used for country code slugs
 
 
 ## Privacy
