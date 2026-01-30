@@ -8,6 +8,8 @@
 **License URI:**       https://www.gnu.org/licenses/gpl-2.0.html  
 **Requires Plugins:**  gatherpress  
 
+[![Playground Demo Link](https://img.shields.io/badge/WordPress_Playground-blue?logo=wordpress&logoColor=%23fff&labelColor=%233858e9&color=%233858e9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/carstingaxion/gatherpress-location-hierarchy/main/.wordpress-org/blueprints/blueprint.json)
+
 Automatically creates hierarchical location taxonomy for GatherPress events using geocoded address data.
 
 ## Description
@@ -16,7 +18,7 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
 
 ### What This Plugin Does
 
-* Creates a custom hierarchical taxonomy "gatherpress-location"
+* Creates a custom hierarchical taxonomy `gatherpress_location`
 * Geocodes venue addresses using the Nominatim (OpenStreetMap) API
 * Automatically generates taxonomy terms in 6 levels: Continent > Country > State > City > Street > Street+Number
 * Establishes parent-child relationships between terms
