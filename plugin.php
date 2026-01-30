@@ -3,7 +3,7 @@
  * Plugin Name:       GatherPress Location Hierarchy
  * Plugin URI:        https://github.com/carstingaxion/gatherpress-location-hierarchy
  * Description:       Adds hierarchical location taxonomy to GatherPress with automatic geocoding
- * Version:           0.1.0
+ * Version:           0.1.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Requires plugins:  gatherpress
