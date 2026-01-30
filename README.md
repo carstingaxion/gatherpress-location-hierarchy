@@ -10,7 +10,7 @@
 
 [![Playground Demo Link](https://img.shields.io/badge/WordPress_Playground-blue?logo=wordpress&logoColor=%23fff&labelColor=%233858e9&color=%233858e9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/carstingaxion/gatherpress-location-hierarchy/main/.wordpress-org/blueprints/blueprint.json)
 
-Automatically creates hierarchical location taxonomy for GatherPress events using geocoded address data.
+Automatically creates hierarchical location taxonomy terms for GatherPress events using geocoded address data.
 
 ## Description
 

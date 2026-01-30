@@ -6,7 +6,7 @@
 	"title": "Location Hierarchy",
 	"category": "gatherpress",
 	"icon": "admin-site-alt3",
-	"description": "Displays the complete location hierarchy as inline text",
+	"description": "Displays an events location hierarchy as inline text",
 	"example": {},
 	"attributes": {
 		"startLevel": {

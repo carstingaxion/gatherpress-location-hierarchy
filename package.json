@@ -1,7 +1,7 @@
 {
     "name": "gatherpress-location-hierarchy",
     "version": "0.1.2",
-    "description": "",
+    "description": "Automatically creates hierarchical location taxonomy terms for GatherPress events using geocoded address data.",
     "author": "carstenbach",
     "license": "GPL-2.0-or-later",
     "keywords": [

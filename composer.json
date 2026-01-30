@@ -1,6 +1,6 @@
 {
     "name": "carstingaxion/gatherpress-location-hierarchy",
-    "description": "",
+    "description": "Automatically creates hierarchical location taxonomy terms for GatherPress events using geocoded address data.",
     "license": "GPL-3.0+",
     "type": "wordpress-plugin",
     "keywords": [
