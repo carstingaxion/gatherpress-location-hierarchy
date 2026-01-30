@@ -37,7 +37,7 @@ The Term arguments, that are not well-parseable by extract-wp-hooks. (https://gi
 
 ## Files
 
-- [includes/classes/class-builder.php:333](https://github.com/carstingaxion/gatherpress-location-hierarchy/blob/main/includes/classes/class-builder.php#L333)
+- [includes/classes/class-builder.php:335](https://github.com/carstingaxion/gatherpress-location-hierarchy/blob/main/includes/classes/class-builder.php#L335)
 ```php
 apply_filters(
 			'gatherpress_location_hierarchy_term_args',
