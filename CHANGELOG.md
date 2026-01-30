@@ -2,11 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased](https://github.com/carstingaxion/gatherpress-location-hierarchy/compare/0.1.0...HEAD)
+## [Unreleased](https://github.com/carstingaxion/gatherpress-location-hierarchy/compare/0.1.1...HEAD)
 
-
+## [0.1.1](https://github.com/carstingaxion/gatherpress-location-hierarchy/compare/0.1.0...0.1.1) - 2026-01-30
 
 ## 0.1.0
+
 * Initial release
 * Hierarchical gatherpress_location taxonomy (6 levels)
 * Nominatim API integration with 1-hour caching and site language support
