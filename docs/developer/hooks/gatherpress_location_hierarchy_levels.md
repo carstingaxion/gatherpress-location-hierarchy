@@ -34,11 +34,11 @@ add_filter( 'gatherpress_location_hierarchy_levels', function() {
 
 ## Files
 
-- [includes/classes/class-setup.php:219](https://github.com/carstingaxion/gatherpress-location-hierarchy/blob/main/includes/classes/class-setup.php#L219)
+- [includes/classes/class-setup.php:221](https://github.com/carstingaxion/gatherpress-location-hierarchy/blob/main/includes/classes/class-setup.php#L221)
 ```php
 apply_filters( 'gatherpress_location_hierarchy_levels', array( 1, 6 ) )
 ```
 
 
 
-[← All Hooks](Hooks)
+[← All Hooks](Hooks.md)

@@ -316,8 +316,6 @@ class Builder {
 		 *     return $args;
 		 * } );
 		 * ```
-		 * 
-		 * The Term arguments, that are not well-parseable by extract-wp-hooks. (https://github.com/akirk/extract-wp-hooks/issues/23)
 		 *
 		 * @since 0.1.0
 		 *
