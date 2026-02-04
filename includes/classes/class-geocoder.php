@@ -360,6 +360,13 @@ class Geocoder {
 		$address   = sanitize_text_field( $address );
 		$cache_key = 'gpvh_geocode_' . md5( $address );
 		
+		/**
+		 * We can be sure, because this is the result of $this->parse_location_data(), 
+		 * which only returns array<string, string> or false, 
+		 * but only gets saved as transient if it's array<string, string>.
+		 *
+		 * @var array<string, string>|false $cached
+		 */
 		$cached = get_transient( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
@@ -403,8 +410,18 @@ class Geocoder {
 			error_log( 'GatherPress Location Hierarchy: Invalid API response for address: ' . $address );
 			return false;
 		}
+
+		// Only use a subset of the result.
+		$data = $data[0];
 		
-		$location = $this->parse_location_data( $data[0] );
+		/**
+		 * We can be sure, because this is the result of the NOMINATIM API,
+		 * which always returns an array of results, if any.
+		 * 
+		 * @see https://nominatim.org/release-docs/develop/api/Search/
+		 * @var array<string, string> $data
+		 */
+		$location = $this->parse_location_data( $data );
 		
 		if ( $location ) {
 			set_transient( $cache_key, $location, $this->cache_duration );
@@ -493,7 +510,7 @@ class Geocoder {
 	 * ]
 	 *
 	 * @since 0.1.0
-	 * @param array<string, mixed> $data API response data (first result from Nominatim).
+	 * @param array<string, string> $data API response data (first result from Nominatim).
 	 * @return array<string, string>|false Parsed location data or false on failure.
 	 */
 	private function parse_location_data( array $data ) {
@@ -502,7 +519,8 @@ class Geocoder {
 		}
 		
 		$address      = $data['address'];
-		$country_code = strtolower( $address['country_code'] ?? '' );
+		$country_code = $address['country_code'] ?? '';
+		// $country_code = strtolower( sanitize_text_field( $country_code ) );
 		
 		// Get continent from country code using translated names.
 		$country_continents = $this->get_country_continents();

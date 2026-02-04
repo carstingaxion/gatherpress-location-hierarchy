@@ -26,6 +26,18 @@ namespace GatherPress_Location_Hierarchy;
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-
+/**
+ * Extract and sanitize block attributes.
+ *
+ * @var array{
+ *   startLevel: int,
+ *   endLevel: int,
+ *   enableLinks: bool,
+ *   showVenue: bool,
+ *   separator: string,
+ * } $attributes
+ * @var string $content
+ * @var \WP_Block $block
+ */
 $gatherpress_location_hierarchy_block = Block_Renderer::get_instance();
 echo $gatherpress_location_hierarchy_block->render( $attributes, $content, $block ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped

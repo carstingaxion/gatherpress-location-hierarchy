@@ -218,7 +218,33 @@ class Setup {
 		 *
 		 * @param array $levels Array with [min_level, max_level] integers.
 		 */
-		return apply_filters( 'gatherpress_location_hierarchy_levels', array( 1, 6 ) );
+		$levels = apply_filters( 'gatherpress_location_hierarchy_levels', array( 1, 6 ) );
+
+		// Defaults
+		$min = 1;
+		$max = 6;
+
+		// @phpstan-ignore-next-line
+		if ( is_array( $levels ) ) {
+			if ( isset( $levels[0] ) && is_numeric( $levels[0] ) ) {
+				$min = (int) $levels[0];
+			}
+
+			if ( isset( $levels[1] ) && is_numeric( $levels[1] ) ) {
+				$max = (int) $levels[1];
+			}
+		}
+
+		// Clamp to allowed bounds (1–6)
+		$min = max( 1, min( 6, $min ) );
+		$max = max( 1, min( 6, $max ) );
+
+		// Ensure logical order
+		if ( $min > $max ) {
+			[ $min, $max ] = [ $max, $min ];
+		}
+
+		return array( $min, $max );
 	}
 	
 	/**
@@ -305,7 +331,7 @@ class Setup {
 			$settings    = \GatherPress\Core\Settings::get_instance();
 			$events_slug = $settings->get_value( 'general', 'urls', 'events' );
 		}
-		$events_slug   = ! empty( $events_slug ) ? $events_slug : '';
+		$events_slug   = ! empty( $events_slug ) && is_string( $events_slug ) ? $events_slug : '';
 		$location_slug = $events_slug . '/in';
 
 		$args = array(
@@ -345,8 +371,13 @@ class Setup {
 		register_block_type( GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . '/build/' );
 	}
 	
-
-	public function register_block_templates() {
+	/**
+	 * Register a block template for the taxonomy.
+	 *
+	 * @since 0.1.0
+	 * @return void
+	 */
+	public function register_block_templates(): void {
 		register_block_template(
 			'gatherpress-locations-templates//taxonomy-gatherpress_location',
 			[
@@ -357,10 +388,19 @@ class Setup {
 		);
 	}
 
-	public function get_template_content( $template ) {
+	/**
+	 * Get template content.
+	 *
+	 * Loads a template file and returns its content as a string.
+	 *
+	 * @since 0.1.0
+	 * @param string $template Template filename.
+	 * @return string Template content.
+	 */
+	public function get_template_content( $template ): string {
 		ob_start();
 		include GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . "/templates/{$template}";
-		return ob_get_clean();
+		return (string) ob_get_clean();
 	}
 
 	/**
@@ -596,7 +636,7 @@ class Setup {
 		$event      = new \GatherPress\Core\Event( $post_id );
 		$venue_info = $event->get_venue_information();
 		
-		if ( ! is_array( $venue_info ) || empty( $venue_info['full_address'] ) ) {
+		if ( empty( $venue_info['full_address'] ) || ! is_string( $venue_info['full_address'] ) ) {
 			return;
 		}
 		

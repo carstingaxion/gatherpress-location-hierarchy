@@ -96,7 +96,13 @@ class Block_Renderer {
 	 * </p>
 	 *
 	 * @since 0.1.0
-	 * @param array<string, mixed> $attributes Block attributes from block.json.
+	 * @param array{
+	 *   startLevel: int,
+	 *   endLevel: int,
+	 *   enableLinks: bool,
+	 *   showVenue: bool,
+	 *   separator: string,
+	 * } $attributes $attributes Block attributes from block.json.
 	 * @param string               $content    Block content (unused for dynamic blocks).
 	 * @param \WP_Block            $block      Block instance with context.
 	 * @return string Rendered block HTML or empty string.
@@ -105,11 +111,10 @@ class Block_Renderer {
 		// Get post ID from context.
 		$post_id = $block->context['postId'] ?? 0;
 		
-		if ( ! $post_id ) {
+		if ( ! $post_id || ! is_int( $post_id ) ) {
 			return '';
 		}
 		
-		$post_id = absint( $post_id );
 		$post    = get_post( $post_id );
 		
 		if ( ! $post ) {
@@ -143,6 +148,10 @@ class Block_Renderer {
 		
 		if ( $show_venue && class_exists( 'GatherPress\Core\Event' ) ) {
 			$event      = new \GatherPress\Core\Event( $post_id );
+			
+			/**
+			 * @var array<string, string>|null $venue_info
+			 */
 			$venue_info = $event->get_venue_information();
 			
 			if ( is_array( $venue_info ) ) {
