@@ -103,8 +103,8 @@ class Block_Renderer {
 	 *   showVenue: bool,
 	 *   separator: string,
 	 * } $attributes $attributes Block attributes from block.json.
-	 * @param string               $content    Block content (unused for dynamic blocks).
-	 * @param \WP_Block            $block      Block instance with context.
+	 * @param string    $content    Block content (unused for dynamic blocks).
+	 * @param \WP_Block $block      Block instance with context.
 	 * @return string Rendered block HTML or empty string.
 	 */
 	public function render( array $attributes, string $content, \WP_Block $block ): string {
@@ -115,7 +115,7 @@ class Block_Renderer {
 			return '';
 		}
 		
-		$post    = get_post( $post_id );
+		$post = get_post( $post_id );
 		
 		if ( ! $post ) {
 			return '';
@@ -147,7 +147,7 @@ class Block_Renderer {
 		$venue_link = '';
 		
 		if ( $show_venue && class_exists( 'GatherPress\Core\Event' ) ) {
-			$event      = new \GatherPress\Core\Event( $post_id );
+			$event = new \GatherPress\Core\Event( $post_id );
 			
 			/**
 			 * @var array<string, string>|null $venue_info
@@ -170,18 +170,8 @@ class Block_Renderer {
 			)
 		);
 		
-		if ( is_wp_error( $location_terms ) ) {
-			error_log( 'GatherPress Location Hierarchy Block: Error getting terms - ' . $location_terms->get_error_message() );
+		if ( is_wp_error( $location_terms ) || empty( $location_terms ) ) {
 			
-			// If showing venue and we have venue info, show just the venue.
-			if ( $show_venue && $venue_name ) {
-				return $this->render_output( $venue_name, $venue_link, $enable_links, $separator );
-			}
-			
-			return '';
-		}
-		
-		if ( empty( $location_terms ) ) {
 			// If showing venue and we have venue info, show just the venue.
 			if ( $show_venue && $venue_name ) {
 				return $this->render_output( $venue_name, $venue_link, $enable_links, $separator );

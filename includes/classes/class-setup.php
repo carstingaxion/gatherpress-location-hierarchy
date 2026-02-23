@@ -220,7 +220,7 @@ class Setup {
 		 */
 		$levels = apply_filters( 'gatherpress_location_hierarchy_levels', array( 1, 6 ) );
 
-		// Defaults
+		// Defaults.
 		$min = 1;
 		$max = 6;
 
@@ -235,11 +235,11 @@ class Setup {
 			}
 		}
 
-		// Clamp to allowed bounds (1–6)
+		// Clamp to allowed bounds (1–6).
 		$min = max( 1, min( 6, $min ) );
 		$max = max( 1, min( 6, $max ) );
 
-		// Ensure logical order
+		// Ensure logical order.
 		if ( $min > $max ) {
 			[ $min, $max ] = [ $max, $min ];
 		}
@@ -632,7 +632,6 @@ class Setup {
 		}
 		
 		if ( ! class_exists( 'GatherPress\Core\Event' ) ) {
-			error_log( 'GatherPress Location Hierarchy: GatherPress Event class not found' );
 			return;
 		}
 		
@@ -689,7 +688,7 @@ class Setup {
 		$location = $geocoder->geocode( $address );
 		
 		if ( ! $location ) {
-			error_log( 'GatherPress Location Hierarchy: Failed to geocode address for event ' . $post_id );
+			error_log( 'GatherPress Location Hierarchy: Failed to geocode address for event ' . $post_id ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return;
 		}
 		

@@ -372,28 +372,34 @@ class Geocoder {
 			return $cached;
 		}
 		
-		// Get WordPress site language in format that Nominatim accepts (e.g., 'de', 'en', 'fr').
-		$site_locale = get_locale();
-		// Convert locale like 'de_DE' to language code 'de'.
-		$language = explode( '_', $site_locale )[0];
+		// @todo: #6 Debug 'accept-language'
+		// // Get WordPress site language in format that Nominatim accepts (e.g., 'de', 'en', 'fr').
+		// $site_locale = get_locale();
+		// // Convert locale like 'de_DE' to language code 'de'.
+		// $language = explode( '_', $site_locale )[0];
 		
-		$response = wp_remote_get(
+		$response = wp_remote_get( // phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get
 			add_query_arg(
 				array(
-					'q'               => $address,
-					'format'          => 'json',
-					'addressdetails'  => '1',
-					'limit'           => '1',
+					'q'              => $address,
+					'format'         => 'json',
+					'addressdetails' => '1',
+					'limit'          => '1',
 					// Preferred language order for showing search results.
 					// This may either be a simple comma-separated list of language codes
 					// or have the same format as the "Accept-Language" HTTP header.
 					// 
 					// A COMMA SEPARATED LIST DID NOT WORK DURING 1. TEST
+					// 
+					// https://nominatim.org/release-docs/latest/api/Search/#language-of-results
+					// 
 					// @todo: #6 Debug 'accept-language', which works for a german adress, with "de" given, but not with "en" given.
 					// 'accept-language' => $language . ',de,en',
 
 					// 'polygon_geojson' => 1, // TODO
-					'email'           => get_bloginfo( 'admin_email' ), // Nominatim requires an email for identification.
+
+					// Nominatim recommends an email for identification.
+					'email'          => get_bloginfo( 'admin_email' ),
 				),
 				$this->api_endpoint
 			),
@@ -406,7 +412,7 @@ class Geocoder {
 		);
 		
 		if ( is_wp_error( $response ) ) {
-			error_log( 'GatherPress Location Hierarchy: Geocoding API error - ' . $response->get_error_message() );
+			error_log( 'GatherPress Location Hierarchy: Geocoding API error - ' . $response->get_error_message() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return false;
 		}
 		
@@ -414,11 +420,12 @@ class Geocoder {
 		$data = json_decode( $body, true );
 		
 		if ( empty( $data ) || ! is_array( $data ) ) {
-			error_log( 'GatherPress Location Hierarchy: Invalid API response for address: ' . $address );
+			error_log( 'GatherPress Location Hierarchy: Invalid API response for address: ' . $address ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return false;
 		}
 
-		// Only use a subset of the result.
+		// Only use the one result, that was requested 
+		// by the 'limit' parameter on the Nominatim request.
 		$data = $data[0];
 		
 		/**
@@ -527,7 +534,7 @@ class Geocoder {
 		
 		$address      = $data['address'];
 		$country_code = $address['country_code'] ?? '';
-		// $country_code = strtolower( sanitize_text_field( $country_code ) );
+		$country_code = sanitize_text_field( $country_code );
 		
 		// Get continent from country code using translated names.
 		$country_continents = $this->get_country_continents();

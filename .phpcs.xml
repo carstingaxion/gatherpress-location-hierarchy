@@ -40,4 +40,10 @@
 		<exclude name="Universal.Classes.RequireFinalClass.NonFinalClassFound" />
 		<exclude name="Universal.Files.SeparateFunctionsFromOO.Mixed" />
 	</rule>
+
+    <rule ref="CognitiveComplexity.Complexity.MaximumComplexity">
+        <properties>
+            <property name="maxCognitiveComplexity" value="25"/>
+        </properties>
+    </rule>
 </ruleset>

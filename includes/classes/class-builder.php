@@ -372,7 +372,7 @@ class Builder {
 		);
 		
 		if ( is_wp_error( $term ) ) {
-			error_log( 'GatherPress Location Hierarchy: Failed to create term - ' . $term->get_error_message() );
+			error_log( 'GatherPress Location Hierarchy: Failed to create term - ' . $term->get_error_message() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return 0;
 		}
 		

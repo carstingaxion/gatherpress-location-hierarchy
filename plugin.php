@@ -83,10 +83,10 @@ function gatherpress_location_hierarchy_activate(): void {
 	$plugin->register_location_taxonomy();
 
 	// Clear the permalinks to add our post type's rules to the database.
-	flush_rewrite_rules();
+	flush_rewrite_rules(); // phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.flush_rewrite_rules_flush_rewrite_rules
 
 	// Query all GatherPress events.
-	$events = get_posts(
+	$event_query = new \WP_Query(
 		array(
 			'post_type'      => 'gatherpress_event',
 			'posts_per_page' => -1,
@@ -95,7 +95,7 @@ function gatherpress_location_hierarchy_activate(): void {
 	);
 
 	// Trigger save action for each event to geocode and create terms.
-	foreach ( $events as $event ) {
+	foreach ( $event_query->get_posts() as $event ) {
 		$plugin->maybe_geocode_event_venue( $event->ID, $event );
 
 		// Be polite to the geocoding API.
@@ -118,7 +118,7 @@ function gatherpress_location_hierarchy_deactivate(): void {
 	global $wpdb;
 	
 	// Delete all geocoding transients.
-	$transients = $wpdb->get_results(
+	$transients = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->prepare(
 			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
 			$wpdb->esc_like( '_transient_gpvh_geocode_' ) . '%'
@@ -131,7 +131,7 @@ function gatherpress_location_hierarchy_deactivate(): void {
 	}
 
 	// Clear the permalinks to remove our post type's rules from the database.
-	flush_rewrite_rules();
+	flush_rewrite_rules(); // phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.flush_rewrite_rules_flush_rewrite_rules
 }
 
 /**
