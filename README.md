@@ -12,6 +12,8 @@
 
 Automatically creates hierarchical location taxonomy terms for GatherPress events using geocoded address data.
 
+![](.wordpress-org/screenshot-1.gif)
+
 ## Description
 
 This plugin extends GatherPress by adding a hierarchical location taxonomy. When an event is saved, the plugin geocodes the venue address and creates taxonomy terms organized by continent, country, state, city, street, and street number. A Gutenberg block displays these hierarchies with configurable level filtering.
@@ -47,8 +49,6 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
 
 * Works inside single event posts
 * Works inside query loops querying for events
-
-
 
 ## Installation
 
