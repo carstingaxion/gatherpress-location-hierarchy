@@ -384,8 +384,15 @@ class Geocoder {
 					'format'          => 'json',
 					'addressdetails'  => '1',
 					'limit'           => '1',
-					'accept-language' => $language,
-					// 'polygon_geojson' => 1,
+					// Preferred language order for showing search results.
+					// This may either be a simple comma-separated list of language codes
+					// or have the same format as the "Accept-Language" HTTP header.
+					// 
+					// A COMMA SEPARATED LIST DID NOT WORK DURING 1. TEST
+					// @todo: #6 Debug 'accept-language', which works for a german adress, with "de" given, but not with "en" given.
+					// 'accept-language' => $language . ',de,en',
+
+					// 'polygon_geojson' => 1, // TODO
 					'email'           => get_bloginfo( 'admin_email' ), // Nominatim requires an email for identification.
 				),
 				$this->api_endpoint
