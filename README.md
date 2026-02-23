@@ -62,7 +62,7 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
 
 1. Upload plugin files to `/wp-content/plugins/gatherpress-location-hierarchy/`
 2. Activate the plugin through the WordPress Plugins menu
-3. Plugin registers taxonomy and block automatically on activation
+3. Location terms are created for all existing events automatically on activation (!)
 
 ### Configuration
 
@@ -79,20 +79,29 @@ This plugin extends GatherPress by adding a hierarchical location taxonomy. When
 
 The plugin sends venue addresses to Nominatim API (OpenStreetMap) including the site language for localized results. Response includes coordinates and address components. Results are cached locally in the WordPress database using transients (1-hour expiration). Cache key format: `gpvh_geocode_{md5(address)}`.
 
-### What happens if geocoding fails?
+### How do I display only specific hierarchy levels?
 
-Events without location terms can have terms added manually through WordPress admin. Geocoding will retry automatically when the event is saved again.
+Use the block's dual-range control:
+* Continent only: Levels 1-1
+* Country through City: Levels 2-4
+* City and Street: Levels 4-5
+* Full hierarchy: Levels 1-6 (plugin default)
+
+For a more general solution, you can use the [`gatherpress_location_hierarchy_levels`](docs/developer/hooks/gatherpress_location_hierarchy_levels.md) filter, which allows to define the hierarchy levels the plugin works with.
+
+```php
+add_filter( 'gatherpress_location_hierarchy_levels', function() {
+    return [2, 4]; // Only Country, State, City
+} );
+```
+
+### Can I customize block appearance?
+
+The block supports WordPress color controls (text, background, link), typography, spacing, and border settings. Custom CSS can target `.wp-block-gatherpress-location-hierarchy` class.
 
 ### Can I manually edit location terms?
 
 No. Even terms are standard WordPress taxonomy terms accessible through the admin interface, exactly this admin interface is not available *normally*. You can enable the common admin UI for the taxonomy by enabling `WP_DEBUG` or running the plugin on a `local` or `development` environment type. Manual edits persist unless all terms are deleted and event is resaved, which will trigger geocoding and recreates terms.
-
-### What is the API usage policy?
-
-Nominatim is free but has usage limits. Review OpenStreetMap's Nominatim Usage Policy. For high-volume sites, consider:
-* Self-hosted Nominatim instance
-* Commercial geocoding service
-* Extended cache duration (filter the cache_duration property)
 
 ### What regions are supported?
 
@@ -119,21 +128,6 @@ $args = array(
 );
 $query = new WP_Query( $args );
 ```
-
-### How do I display only specific hierarchy levels?
-
-Use the block's dual-range control:
-* Continent only: Levels 1-1
-* Country through City: Levels 2-4
-* City and Street: Levels 4-5
-* Full hierarchy: Levels 1-6 (plugin default)
-
-
-
-### Can I customize block appearance?
-
-The block supports WordPress color controls (text, background, link), typography, spacing, and border settings. Custom CSS can target `.wp-block-gatherpress-location-hierarchy` class.
-
 ### Does this affect performance?
 
 Performance considerations:
