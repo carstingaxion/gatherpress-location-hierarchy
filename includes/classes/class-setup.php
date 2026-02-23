@@ -98,7 +98,7 @@ class Setup {
 		add_action( 'init', array( $this, 'register_location_taxonomy' ), 5 );
 		// Register block at default priority.
 		add_action( 'init', array( $this, 'register_block' ) );
-		// add_action( 'init', array( $this, 'register_block_templates' ) );
+		add_action( 'init', array( $this, 'register_block_templates' ) );
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'save_post_gatherpress_event', array( $this, 'maybe_geocode_event_venue' ), 20, 2 );
@@ -373,6 +373,9 @@ class Setup {
 	
 	/**
 	 * Register a block template for the taxonomy.
+	 * 
+	 * @see https://developer.wordpress.org/themes/templates/template-hierarchy/
+	 * @see https://developer.wordpress.org/news/2024/08/registering-block-templates-via-plugins-in-wordpress-6-7/
 	 *
 	 * @since 0.1.0
 	 * @return void
@@ -399,7 +402,7 @@ class Setup {
 	 */
 	public function get_template_content( $template ): string {
 		ob_start();
-		include GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . "/templates/{$template}";
+		include GATHERPRESS_LOCATION_HIERARCHY_CORE_PATH . "/includes/templates/{$template}";
 		return (string) ob_get_clean();
 	}
 
