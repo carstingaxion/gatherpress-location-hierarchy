@@ -2,11 +2,11 @@
   "$schema": "https://schemas.wp.org/trunk/block.json",
   "apiVersion": 3,
   "name": "gatherpress/location-hierarchy",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "title": "Location Hierarchy",
   "category": "gatherpress",
   "icon": "admin-site-alt3",
-  "description": "Displays the complete location hierarchy as inline text",
+  "description": "Displays an events location hierarchy as inline text",
   "example": {},
   "attributes": {
     "startLevel": {
